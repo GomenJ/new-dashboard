@@ -75,7 +75,7 @@ export default function DemographicCard() {
       </div>
 
       {/* Values*/}
-      <div className="max-h-48 space-y-5 overflow-y-auto mx-4">
+      <div className="max-h-36 space-y-5 overflow-y-auto mx-4">
         {regionData && regionData.latest_day_records.map((item) => (
           <div key={item.Gerencia} className="flex items-center justify-between">
             <div className="flex items-center gap-3">
