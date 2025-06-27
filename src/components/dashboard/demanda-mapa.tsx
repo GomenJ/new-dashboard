@@ -1,15 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, ReactNode } from 'react';
 
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
-} from "@/components/ui/tooltip"; // Adjust the import path if necessary
-import type { Gerencias } from "@/feautures/pml/types/pml-diario-types";
 import { Triangle } from 'lucide-react';
-import { regions } from '@/feautures/pml/utils/regions-path';
-import type { DemandaHorariaData, DemandaPorHora } from '../types/demanda-horaria-type';
+import type { Gerencias, DemandaHorariaData, DemandaPorHora } from './api/get-hourly-demand.ts';
+import { regions } from "./utils/regions-path.ts";
+
 
 interface MexicoGerenciaSVGMapProps {
     regionData: DemandaHorariaData;
@@ -19,8 +13,9 @@ const DEFAULT_FILL_COLOR = "#007700";
 const HOVER_FILL_COLOR = "#003300"; // Or your preferred hover color
 
 export const DemandaMapaGerencia = ({ regionData }: MexicoGerenciaSVGMapProps) => {
-    // Example data for the "NOR" region
     const [hoveredRegionIdForColor, setHoveredRegionIdForColor] = useState<string | null>(null);
+    const [tooltip, setTooltip] = useState<{ visible: boolean; content: ReactNode; x: number; y: number } | null>(null);
+
 
     const latestDataByGerencia = useMemo(() => {
         if (!regionData) {
@@ -44,12 +39,52 @@ export const DemandaMapaGerencia = ({ regionData }: MexicoGerenciaSVGMapProps) =
         return map;
     }, [regionData.previous_week_day_records]);
 
-    const handlePathMouseEnter = (regionId: string) => {
+    const handlePathMouseEnter = (e: React.MouseEvent<SVGPathElement>, regionId: string) => {
         setHoveredRegionIdForColor(regionId);
+
+        const gerenciaKey = regionId as Gerencias;
+        const currentData = latestDataByGerencia.get(gerenciaKey);
+        const prevWeekData = previousWeekDataByGerencia.get(gerenciaKey);
+        const region = regions.find(r => r.id === regionId);
+
+        const tooltipContent = (
+            <div className='w-80 bg-gray-800 text-white p-4 rounded-md shadow-lg text-sm'>
+                {currentData && prevWeekData ? (
+                    <>
+                        <h4 className="font-bold text-base mb-2">{currentData.Gerencia}</h4>
+                        <p>Fecha: {currentData.Fecha}</p>
+                        <div className='flex items-center gap-2'>
+                            <p>Promedio Demanda hoy: {currentData.Promedio_Demanda.toFixed(2)} MWh</p>
+                            <ComparePML
+                                latestAveragePML={currentData.Promedio_Demanda}
+                                previousWeekAveragePML={prevWeekData?.Promedio_Demanda || 0} />
+                            <p>Promedio Demanda -7 días: {prevWeekData.Promedio_Demanda.toFixed(2)} MWh</p>
+
+                        </div>
+
+                        <p>Máximo Demanda: {currentData.Maximo_Demanda.toFixed(2)} MWh</p>
+                        <p>Mínimo Demanda: {currentData.Minimo_Demanda.toFixed(2)} MWh</p>
+                    </>
+                ) : (
+                    <>
+                        <h4 className="font-bold text-base mb-2">{region?.name}</h4> {/* Use the display name from your regions array */}
+                        <p>No hay datos de Demanda disponibles para esta región.</p>
+                    </>
+                )}
+            </div>
+        );
+
+        setTooltip({
+            visible: true,
+            content: tooltipContent,
+            x: e.clientX,
+            y: e.clientY,
+        });
     };
 
     const handlePathMouseLeave = () => {
         setHoveredRegionIdForColor(null);
+        setTooltip(null);
     };
 
     const getFillColor = (regionId: string) => {
@@ -58,70 +93,41 @@ export const DemandaMapaGerencia = ({ regionData }: MexicoGerenciaSVGMapProps) =
 
     return (
         <>
-            <TooltipProvider>
-                <svg
-                    // width="510.8075" height="318.17249"
-                    viewBox="0 0 188.06782 137.0998"
-                    version="1.1"
-                    id="svg1"
-                    xmlSpace="preserve"
-                    xmlns="http://www.w3.org/2000/svg"
-                    className='w-96 h-64 2xl:w-144 2xl:h-96'
-                    style={{ display: 'block', margin: '0 auto' }} // Center the SVG
-                >
-                    <g id="layer1" transform="translate(-10.717422,-49.083454)">
-                        {regions.map((region) => {
-                            const gerenciaKey = region.id as Gerencias;
-                            const currentData = latestDataByGerencia.get(gerenciaKey);
-                            const prevWeekData = previousWeekDataByGerencia.get(gerenciaKey);
-
-                            return (
-                                <Tooltip key={region.id}>
-                                    <TooltipTrigger asChild>
-                                        <path
-                                            id={region.id}
-                                            display="inline"
-                                            fill={getFillColor(region.id)}
-                                            strokeWidth="0.679882"
-                                            // stroke="#333" // Optional: add a stroke
-                                            // stroke="#00ff00" // Optional: add a stroke
-                                            d={region.d}
-                                            onMouseEnter={() => handlePathMouseEnter(region.id)}
-                                            onMouseLeave={handlePathMouseLeave}
-                                            style={{ cursor: 'pointer' }}
-                                        />
-                                    </TooltipTrigger>
-                                    <TooltipContent className='w-80 bg-accent text-accent-foreground'>
-                                        {currentData && prevWeekData ? (
-                                            <>
-                                                <h4>{currentData.Gerencia}</h4>
-                                                <p>Fecha: {currentData.Fecha}</p>
-                                                <div className='flex items-center gap-2'>
-                                                    <p>Promedio Demanda hoy: {currentData.Promedio_Demanda.toFixed(2)}MHh</p>
-                                                    <ComparePML
-                                                        latestAveragePML={currentData.Promedio_Demanda}
-                                                        previousWeekAveragePML={prevWeekData?.Promedio_Demanda || 0} />
-                                                    <p>Promedio Demanda -7 días: {prevWeekData.Promedio_Demanda.toFixed(2)} MWh</p>
-
-                                                </div>
-
-                                                <p>Máximo Demanda: {currentData.Maximo_Demanda.toFixed(2)} MWh</p>
-                                                <p>Mínimo Demanda: {currentData.Minimo_Demanda.toFixed(2)} MWh</p>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <h4>{region.name}</h4> {/* Use the display name from your regions array */}
-                                                <p>No hay datos de Demanda disponibles para esta región.</p>
-                                            </>
-                                        )}
-                                    </TooltipContent>
-                                </Tooltip >
-
-                            )
-                        })}
-                    </g>
-                </svg>
-            </TooltipProvider>
+            <svg
+                // width="510.8075" height="318.17249"
+                viewBox="0 0 188.06782 137.0998"
+                version="1.1"
+                id="svg1"
+                xmlSpace="preserve"
+                xmlns="http://www.w3.org/2000/svg"
+                className='w-96 h-64 2xl:w-144 2xl:h-96'
+                style={{ display: 'block', margin: '0 auto' }} // Center the SVG
+            >
+                <g id="layer1" transform="translate(-10.717422,-49.083454)">
+                    {regions.map((region) => {
+                        return (
+                            <path
+                                key={region.id}
+                                id={region.id}
+                                display="inline"
+                                fill={getFillColor(region.id)}
+                                strokeWidth="0.679882"
+                                // stroke="#333" // Optional: add a stroke
+                                // stroke="#00ff00" // Optional: add a stroke
+                                d={region.d}
+                                onMouseEnter={(e) => handlePathMouseEnter(e, region.id)}
+                                onMouseLeave={handlePathMouseLeave}
+                                style={{ cursor: 'pointer' }}
+                            />
+                        )
+                    })}
+                </g>
+            </svg>
+            {tooltip && tooltip.visible && (
+                <div style={{ position: 'fixed', top: tooltip.y + 10, left: tooltip.x + 10, zIndex: 50 }}>
+                    {tooltip.content}
+                </div>
+            )}
         </>
     );
 };
