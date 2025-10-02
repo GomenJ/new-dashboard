@@ -8,7 +8,7 @@ import { getMonthlyAveragePmlMda, MonthlyAveragePmlMdaData } from "./api/get-mon
 import { useQuery } from "@tanstack/react-query";
 
 export default function MdaStats() {
-  const { data: pmlMonthlyData, error: errorPmlMonthly, isPending: isPendingPmlMonthly } = useQuery<MonthlyAveragePmlMdaData[], Error>({
+  const { data: pmlMonthlyData } = useQuery<MonthlyAveragePmlMdaData[], Error>({
     queryKey: ['pmlMonthlyData-general'], // A unique key for this query
     queryFn: getMonthlyAveragePmlMda,    // The function that fetches the data
   });

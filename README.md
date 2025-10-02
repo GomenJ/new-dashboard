@@ -1,4 +1,1 @@
-Ventas mensuales - ahí el promedio de todo el SIN del PML del MDA y MTR
-
-Monthly target - 
-PND mapa - Demanda
+Hello Copilot, based on the get-real-demand.ts api called, could you help me change the values for this Chart? in the get-real-demand.ts I have a small sample data so you can see what you will receive in the api call

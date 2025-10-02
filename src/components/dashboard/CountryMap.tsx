@@ -15,7 +15,7 @@ interface CountryMapProps {
 const DEFAULT_FILL_COLOR = "#949994";
 const HOVER_FILL_COLOR = "#003300";
 
-const CountryMap: React.FC<CountryMapProps> = ({ regionData }) => {
+const CountryMap = ({ regionData }: CountryMapProps) => {
   const [hoveredRegionIdForColor, setHoveredRegionIdForColor] = useState<
     string | null
   >(null);

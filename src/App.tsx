@@ -18,7 +18,7 @@ import Blank from "./pages/Blank";
 import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import Home from "./pages/Dashboard/Home";
-import PML from "./pages/Dashboard/PML";
+import PML from "./pages/Dashboard/PML/PML";
 
 export default function App() {
   return (
