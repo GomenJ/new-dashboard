@@ -42,11 +42,12 @@ interface ChartDataPoint {
 
 export function PmlChart() {
   const [timeRange, setTimeRange] = React.useState("full");
+  const [market, setMarket] = React.useState("mda");
 
   const { data, isLoading, error } = useQuery<PmlComparisonResponse, Error>({
-    queryKey: ["pml-daily-comparison", "mda"],
+    queryKey: ["pml-daily-comparison", market],
     queryFn: async () => {
-      const url = `${import.meta.env.VITE_API_URL}/api/v1/pml/comparison/month-over-month?market=mda`;
+      const url = `${import.meta.env.VITE_API_URL}/api/v1/pml/comparison/month-over-month?market=${market}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch PML comparison data");
       return res.json();
@@ -185,7 +186,7 @@ export function PmlChart() {
   return (
     <Card className="@container/card">
       <CardHeader>
-        <CardTitle>Evolución Diaria del PML</CardTitle>
+        <CardTitle>Evolución Diaria del PML - {market.toUpperCase()}</CardTitle>
         <CardDescription>
           <span className="hidden @[540px]/card:block">
             Promedio diario del Precio Marginal Local del mes actual
@@ -193,17 +194,29 @@ export function PmlChart() {
           <span className="@[540px]/card:hidden">PML Diario - Mes Actual</span>
         </CardDescription>
         <CardAction>
-          <Select
-            defaultValue={timeRange}
-            onChange={setTimeRange}
-            className="w-40"
-            placeholder="Mes completo"
-            options={[
-              { value: "full", label: "Mes completo" },
-              { value: "7d", label: "Últimos 7 días" },
-              { value: "15d", label: "Últimos 15 días" },
-            ]}
-          />
+          <div className="flex gap-2">
+            <Select
+              defaultValue={market}
+              onChange={setMarket}
+              className="w-24"
+              placeholder="Mercado"
+              options={[
+                { value: "mda", label: "MDA" },
+                { value: "mtr", label: "MTR" },
+              ]}
+            />
+            <Select
+              defaultValue={timeRange}
+              onChange={setTimeRange}
+              className="w-40"
+              placeholder="Mes completo"
+              options={[
+                { value: "full", label: "Mes completo" },
+                { value: "7d", label: "Últimos 7 días" },
+                { value: "15d", label: "Últimos 15 días" },
+              ]}
+            />
+          </div>
         </CardAction>
       </CardHeader>
       <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">

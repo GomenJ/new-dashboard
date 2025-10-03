@@ -106,7 +106,7 @@ export function SectionCards() {
       {/* Promedio Mensual Card */}
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Promedio Mensual</CardDescription>
+          <CardDescription>Promedio Mensual - MDA</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
             {averageLoading || averageError || !averageData
               ? '--'
@@ -133,7 +133,7 @@ export function SectionCards() {
       {/* Variación vs Mes Pasado Card */}
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Variación vs Mes Pasado</CardDescription>
+          <CardDescription>Variación vs Mes Pasado - MDA</CardDescription>
           <CardTitle
             className={`text-2xl font-semibold tabular-nums @[250px]/card:text-3xl ${
               comparisonLoading || comparisonError || !comparisonData
@@ -191,7 +191,7 @@ export function SectionCards() {
       {/* Maximo del Mes Card */}
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Máximo del Mes</CardDescription>
+          <CardDescription>Máximo del Mes - MDA</CardDescription>
           <CardTitle className="text-2xl font-semibold text-red-600 tabular-nums @[250px]/card:text-3xl">
             {isLoading || error || !data
               ? '--'
@@ -221,7 +221,7 @@ export function SectionCards() {
       {/* Minimo del Mes Card */}
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Mínimo del Mes</CardDescription>
+          <CardDescription>Mínimo del Mes - MDA</CardDescription>
           <CardTitle className="text-2xl font-semibold text-green-600 tabular-nums @[250px]/card:text-3xl">
             {isLoading || error || !data
               ? '--'

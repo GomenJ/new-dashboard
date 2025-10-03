@@ -43,11 +43,12 @@ const timeRangeOptions = [
 export function PmlYearlyChart() {
   const [selectedSystem, setSelectedSystem] = React.useState("SIN");
   const [timeRange, setTimeRange] = React.useState("full");
+  const [market, setMarket] = React.useState("mda");
 
   const { data, isLoading, error } = useQuery<PmlYearlyComparisonResponse, Error>({
-    queryKey: ["pml-yearly-comparison", "mda", selectedSystem, timeRange],
+    queryKey: ["pml-yearly-comparison", market, selectedSystem, timeRange],
     queryFn: async () => {
-      const url = `${import.meta.env.VITE_API_URL}/api/v1/pml/yearly-comparison-by-system?market=mda&sistema=${selectedSystem}`;
+      const url = `${import.meta.env.VITE_API_URL}/api/v1/pml/yearly-comparison-by-system?market=${market}&sistema=${selectedSystem}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch PML yearly comparison data");
       return res.json();
@@ -258,7 +259,7 @@ export function PmlYearlyChart() {
   return (
     <Card className="@container/card">
       <CardHeader>
-        <CardTitle>PML Promedio Diario (Sistema): {currentYear} vs {previousYear}</CardTitle>
+        <CardTitle>PML Promedio Diario ({market.toUpperCase()}): {currentYear} vs {previousYear}</CardTitle>
         <CardDescription>
           <span className="hidden @[540px]/card:block">
             Comparación anual del Precio Marginal Local por sistema - {data?.data?.sistema || selectedSystem}
@@ -267,6 +268,16 @@ export function PmlYearlyChart() {
         </CardDescription>
         <CardAction>
           <div className="flex gap-2">
+            <Select
+              defaultValue={market}
+              onChange={setMarket}
+              className="w-24"
+              placeholder="Mercado"
+              options={[
+                { value: "mda", label: "MDA" },
+                { value: "mtr", label: "MTR" },
+              ]}
+            />
             <Select
               defaultValue={selectedSystem}
               onChange={setSelectedSystem}
