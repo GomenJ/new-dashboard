@@ -180,13 +180,48 @@ export function PmlYearlyChart() {
           colors: "hsl(var(--muted-foreground))",
           fontSize: "12px",
         },
-        formatter: (value: number) => `$${value.toFixed(0)}`,
+        formatter: (value: number) => `$${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`,
       },
     },
     tooltip: {
-      theme: "dark",
-      y: {
-        formatter: (value: number) => `$${value.toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
+      theme: "light",
+      style: {
+        fontSize: "12px",
+        fontFamily: "Inter, sans-serif",
+      },
+      shared: true,
+      intersect: false,
+      custom: function({series, dataPointIndex, w}) {
+        const label = w.globals.labels[dataPointIndex];
+        const currentYearValue = series[0][dataPointIndex];
+        const previousYearValue = series[1][dataPointIndex];
+        const currentYear = w.config.series[0].name;
+        const previousYear = w.config.series[1].name;
+        
+        return `
+          <div style="
+            background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
+            color: white;
+            padding: 10px 12px;
+            border-radius: 6px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-family: Inter, sans-serif;
+            min-width: 180px;
+          ">
+            <div style="font-weight: 600; margin-bottom: 6px; font-size: 12px;">${label}</div>
+            <div style="display: flex; align-items: center; margin-bottom: 3px;">
+              <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #2db2ac; margin-right: 6px;"></div>
+              <span style="font-size: 11px; color: rgba(255, 255, 255, 0.8);">${currentYear}:</span>
+              <span style="font-weight: 600; margin-left: 4px; font-size: 12px;">$${currentYearValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div style="display: flex; align-items: center;">
+              <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #a74044; margin-right: 6px;"></div>
+              <span style="font-size: 11px; color: rgba(255, 255, 255, 0.8);">${previousYear}:</span>
+              <span style="font-weight: 600; margin-left: 4px; font-size: 12px;">$${previousYearValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+            </div>
+          </div>
+        `;
       },
     },
     legend: {
@@ -251,10 +286,9 @@ export function PmlYearlyChart() {
       </CardHeader>
       <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
         {isLoading ? (
-          <div className="flex items-center justify-center h-[350px]">
-            <div className="animate-pulse">
-              <div className="h-[350px] bg-gray-200 rounded dark:bg-gray-700"></div>
-            </div>
+          <div className="flex flex-col items-center justify-center h-[350px] space-y-3">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#2db2ac]"></div>
+            <p className="text-sm text-muted-foreground animate-pulse">Cargando comparación anual...</p>
           </div>
         ) : (
           <Chart

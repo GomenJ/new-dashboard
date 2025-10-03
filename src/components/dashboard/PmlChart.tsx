@@ -132,13 +132,35 @@ export function PmlChart() {
           colors: "hsl(var(--muted-foreground))",
           fontSize: "12px",
         },
-        formatter: (value: number) => `$${value.toFixed(0)}`,
+        formatter: (value: number) => `$${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`,
       },
     },
     tooltip: {
-      theme: "dark",
-      y: {
-        formatter: (value: number) => `$${value.toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
+      theme: "light",
+      style: {
+        fontSize: "12px",
+        fontFamily: "Inter, sans-serif",
+      },
+      custom: function({series, seriesIndex, dataPointIndex, w}) {
+        const value = series[seriesIndex][dataPointIndex];
+        const label = w.globals.labels[dataPointIndex];
+        
+        return `
+          <div style="
+            background: linear-gradient(135deg, #2db2ac 0%, #1a9b94 100%);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(45, 178, 172, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-family: Inter, sans-serif;
+          ">
+            <div style="font-weight: 600; margin-bottom: 4px;">${label}</div>
+            <div style="font-size: 14px; font-weight: 700;">
+              $${value.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+            </div>
+          </div>
+        `;
       },
     },
   };
@@ -186,10 +208,9 @@ export function PmlChart() {
       </CardHeader>
       <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
         {isLoading ? (
-          <div className="flex items-center justify-center h-[250px]">
-            <div className="animate-pulse">
-              <div className="h-[250px] bg-gray-200 rounded dark:bg-gray-700"></div>
-            </div>
+          <div className="flex flex-col items-center justify-center h-[250px] space-y-3">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#2db2ac]"></div>
+            <p className="text-sm text-muted-foreground animate-pulse">Cargando datos del gráfico...</p>
           </div>
         ) : (
           <Chart
