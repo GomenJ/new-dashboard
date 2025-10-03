@@ -1,5 +1,6 @@
 import PmlSection from "../../components/dashboard/PmlSection";
 import PageMeta from "../../components/common/PageMeta";
+import { ServiciosConexosSection } from "@/components/dashboard/ServiciosConexosSection";
 export default function Home() {
   return (
     <>
@@ -12,8 +13,8 @@ export default function Home() {
           <PmlSection />
         </div>
 
-        <div className="col-span-12 xl:col-span-5">
-          {/* <TransferCapacityTarget /> */}
+        <div className="col-span-12 space-y-6">
+          <ServiciosConexosSection />
         </div>
 
         <div className="col-span-12">
