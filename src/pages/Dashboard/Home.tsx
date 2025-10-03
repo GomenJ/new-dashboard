@@ -1,9 +1,4 @@
 import PmlSection from "../../components/dashboard/PmlSection";
-import MdaStats from "../../components/dashboard/MdaStats";
-import RealDemandChart from "../../components/dashboard/RealDemandChart";
-import TransferCapacityTarget from "../../components/dashboard/TransferCapacityTarget";
-import RecentMediciones from "../../components/dashboard/RecentMediciones";
-import DemographicCard from "../../components/dashboard/DemographicCard";
 import PageMeta from "../../components/common/PageMeta";
 export default function Home() {
   return (
@@ -18,19 +13,19 @@ export default function Home() {
         </div>
 
         <div className="col-span-12 xl:col-span-5">
-          <TransferCapacityTarget />
+          {/* <TransferCapacityTarget /> */}
         </div>
 
         <div className="col-span-12">
-          <RealDemandChart />
+          {/* <RealDemandChart /> */}
         </div>
 
         <div className="col-span-12 xl:col-span-5">
-          <DemographicCard />
+          {/* <DemographicCard /> */}
         </div>
 
         <div className="col-span-12 xl:col-span-7">
-          <RecentMediciones />
+          {/* <RecentMediciones /> */}
         </div>
       </div>
     </>
