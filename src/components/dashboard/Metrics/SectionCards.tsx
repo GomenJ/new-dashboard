@@ -18,12 +18,14 @@ interface ExtremesResponse {
       HoraOperacion: number;
       PrecioMarginalLocal_MWh: number;
       Sistema: string;
+      ClaveNodo: string;
     };
     min: {
       FechaOperacion: string;
       HoraOperacion: number;
       PrecioMarginalLocal_MWh: number;
       Sistema: string;
+      ClaveNodo: string;
     };
   };
   status: string;
@@ -216,6 +218,11 @@ export function SectionCards() {
               ? ''
               : `Sistema: ${data.data.max.Sistema}`}
           </div>
+          <div className="text-muted-foreground">
+            {isLoading || error || !data
+              ? '--'
+              : `Nodo: ${data.data.max.ClaveNodo}`}
+          </div>
         </CardFooter>
       </Card>
       {/* Minimo del Mes Card */}
@@ -243,9 +250,15 @@ export function SectionCards() {
           </div>
           <div className="text-muted-foreground">
             {isLoading || error || !data
-              ? ''
+              ? '--'
               : `Sistema: ${data.data.min.Sistema}`}
           </div>
+          <div className="text-muted-foreground">
+            {isLoading || error || !data
+              ? '--'
+              : `Nodo: ${data.data.min.ClaveNodo}`}
+          </div>
+
         </CardFooter>
       </Card>
     </div>

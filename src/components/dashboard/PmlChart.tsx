@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import Select from "@/components/form/Select";
+import { ChartActionsMenu } from "@/components/common/ChartActionsMenu";
 
 interface PmlComparisonResponse {
   status: string;
@@ -68,6 +69,37 @@ export function PmlChart() {
       };
     });
   }, [data]);
+
+  // CSV Download function
+  const downloadCSV = React.useCallback(() => {
+    if (!data?.data) return;
+
+    const csvRows: string[] = [];
+    const headers = ['Date', 'PML_USD'];
+    csvRows.push(headers.join(','));
+
+    // Add data rows
+    chartData.forEach((dataPoint) => {
+      csvRows.push(`"${dataPoint.x}",${dataPoint.y}`);
+    });
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      
+      const filename = `pml_daily_${market}_${new Date().toISOString().slice(0, 10)}.csv`;
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+      
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  }, [data, chartData, market]);
 
   const filteredData = React.useMemo(() => {
     if (timeRange === "full") return chartData;
@@ -194,7 +226,11 @@ export function PmlChart() {
           <span className="@[540px]/card:hidden">PML Diario - Mes Actual</span>
         </CardDescription>
         <CardAction>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <ChartActionsMenu 
+              onDownloadCSV={downloadCSV}
+              disabled={!data?.data}
+            />
             <Select
               defaultValue={market}
               onChange={setMarket}
