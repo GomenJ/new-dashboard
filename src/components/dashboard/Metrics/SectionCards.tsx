@@ -114,16 +114,10 @@ export function SectionCards() {
               ? '--'
               : `$${averageData.data.averagePML.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
           </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
-              <TrendingUp />
-              Promedio
-            </Badge>
-          </CardAction>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
           <div className="line-clamp-1 flex gap-2 font-medium">
-            Precio promedio del mes <TrendingUp className="size-4" />
+            Precio promedio del mes 
           </div>
           <div className="text-muted-foreground">
             {averageLoading || averageError || !averageData

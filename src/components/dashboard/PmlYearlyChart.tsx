@@ -163,8 +163,15 @@ export function PmlYearlyChart() {
       const filteredCurrentYear = filterByTimeRange(nodeData.currentYearData, true);
       const filteredPreviousYear = filterByTimeRange(nodeData.previousYearData, false);
       
-      filteredCurrentYear.forEach(d => allFilteredDates.add(d.Fecha));
-      filteredPreviousYear.forEach(d => allFilteredDates.add(d.Fecha));
+      // Extract dates as month-day only (without year) to align both years
+      filteredCurrentYear.forEach(d => {
+        const monthDay = d.Fecha.slice(5); // Get "MM-DD" part
+        allFilteredDates.add(monthDay);
+      });
+      filteredPreviousYear.forEach(d => {
+        const monthDay = d.Fecha.slice(5); // Get "MM-DD" part  
+        allFilteredDates.add(monthDay);
+      });
       
       processedData[sistema] = {
         currentYear: processYearData(filteredCurrentYear),
@@ -172,16 +179,17 @@ export function PmlYearlyChart() {
       };
     });
 
-    // Generate categories from all dates
+    // Generate categories from unique month-day combinations
     const sortedDates = Array.from(allFilteredDates).sort();
     const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-    const categories = sortedDates.map(fecha => {
-      const monthDay = fecha.slice(5);
+    const categories = sortedDates.map(monthDay => {
       const [month, day] = monthDay.split('-');
       const monthNumber = parseInt(month, 10);
       const dayNumber = parseInt(day, 10);
       return `${monthNames[monthNumber - 1]} ${dayNumber}`;
     });
+
+    console.log('Categories count:', categories.length, 'Unique dates:', sortedDates.length);
 
     return { processedData, categories };
   }, [chartData, timeRange, processYearData]);
@@ -313,10 +321,34 @@ export function PmlYearlyChart() {
         maxHeight: 60, // Limit label height
         trim: true, // Trim long labels
         show: true,
-        // Show fewer labels for better UX when period is longer than 1 month
         showDuplicates: false,
+        // Dynamically show fewer labels based on data size and time range
+        ...(categories.length > 30 && {
+          formatter: function(value: string, _timestamp?: number, opts?: any) {
+            if (!opts || !opts.dataPointIndex) return value;
+            const index = opts.dataPointIndex;
+            
+            // For full year or large datasets, show only certain intervals
+            if (timeRange === "full") {
+              // Show only first day of each month or every 15th day
+              const dayMatch = value.match(/(\w+)\s+(\d+)/);
+              if (dayMatch) {
+                const day = parseInt(dayMatch[2]);
+                return (day === 1 || day === 15) ? value : "";
+              }
+            } else if (categories.length > 60) {
+              // For very large datasets, show every 4th label
+              return index % 4 === 0 ? value : "";
+            } else if (categories.length > 30) {
+              // For medium datasets, show every 2nd label
+              return index % 2 === 0 ? value : "";
+            }
+            
+            return value;
+          }
+        })
       },
-      tickAmount: timeRange === "full" ? 12 : timeRange === "9m" ? 9 : timeRange === "6m" ? 6 : undefined,
+      tickAmount: timeRange === "full" ? 24 : timeRange === "9m" ? 18 : timeRange === "6m" ? 12 : Math.min(categories.length, 15),
       axisBorder: { show: false },
       axisTicks: { show: false },
     },
