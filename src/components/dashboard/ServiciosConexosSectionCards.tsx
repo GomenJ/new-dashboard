@@ -17,6 +17,7 @@ interface ServiciosAverageResponse {
     market: string;
     startDate: string;
     sistema: string;
+    tipoReserva: string;
   };
   status: string;
 }
@@ -28,6 +29,7 @@ interface ServiciosExtremesResponse {
       FechaOperacion: string;
       HoraOperacion: number;
       PrecioReserva_MW_Hora: number;
+      Sistema: string;
       TipoReserva: string;
       ZonaReserva: string;
     };
@@ -35,6 +37,7 @@ interface ServiciosExtremesResponse {
       FechaOperacion: string;
       HoraOperacion: number;
       PrecioReserva_MW_Hora: number;
+      Sistema: string;
       TipoReserva: string;
       ZonaReserva: string;
     };
@@ -50,6 +53,7 @@ interface ServiciosComparisonResponse {
     percentage_change: number;
     previous_month_average: number;
     sistema: string;
+    tipo_reserva: string;
     trend: 'positive' | 'negative';
   };
   status: string;
@@ -59,15 +63,21 @@ function padHour(hour: number) {
   return hour.toString().padStart(2, '0') + ':00';
 }
 
-export function ServiciosConexosSectionCards() {
+interface ServiciosConexosSectionCardsProps {
+  sistema: string;
+  tipoReserva: string;
+}
+
+export function ServiciosConexosSectionCards({ sistema, tipoReserva }: ServiciosConexosSectionCardsProps) {
   const {
     data: averageData,
     isLoading: averageLoading,
     error: averageError,
   } = useQuery<ServiciosAverageResponse, Error>({
-    queryKey: ['servicios-average', 'mda', 'SIN'],
+    queryKey: ['servicios-average', 'mda', sistema, tipoReserva],
     queryFn: async () => {
-      const url = `${import.meta.env.VITE_API_URL}/api/v1/servicios-conexos/current-month-average?market=mda&sistema=SIN`;
+      const encodedTipoReserva = encodeURIComponent(tipoReserva);
+      const url = `${import.meta.env.VITE_API_URL}/api/v1/servicios-conexos/current-month-average?market=mda&sistema=${sistema}&tipoReserva=${encodedTipoReserva}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error('Failed to fetch servicios average');
       return res.json();
@@ -79,9 +89,10 @@ export function ServiciosConexosSectionCards() {
     isLoading: extremesLoading,
     error: extremesError,
   } = useQuery<ServiciosExtremesResponse, Error>({
-    queryKey: ['servicios-extremes', 'mda', 'SIN'],
+    queryKey: ['servicios-extremes', 'mda', sistema, tipoReserva],
     queryFn: async () => {
-      const url = `${import.meta.env.VITE_API_URL}/api/v1/servicios-conexos/current-month-extremes?market=mda&sistema=SIN`;
+      const encodedTipoReserva = encodeURIComponent(tipoReserva);
+      const url = `${import.meta.env.VITE_API_URL}/api/v1/servicios-conexos/current-month-extremes?market=mda&sistema=${sistema}&tipoReserva=${encodedTipoReserva}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error('Failed to fetch servicios extremes');
       return res.json();
@@ -93,9 +104,10 @@ export function ServiciosConexosSectionCards() {
     isLoading: comparisonLoading,
     error: comparisonError,
   } = useQuery<ServiciosComparisonResponse, Error>({
-    queryKey: ['servicios-comparison', 'mda', 'SIN'],
+    queryKey: ['servicios-comparison', 'mda', sistema, tipoReserva],
     queryFn: async () => {
-      const url = `${import.meta.env.VITE_API_URL}/api/v1/servicios-conexos/comparison/month-over-month?market=mda&sistema=SIN`;
+      const encodedTipoReserva = encodeURIComponent(tipoReserva);
+      const url = `${import.meta.env.VITE_API_URL}/api/v1/servicios-conexos/comparison/month-over-month?market=mda&sistema=${sistema}&tipo_reserva=${encodedTipoReserva}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error('Failed to fetch servicios comparison');
       return res.json();
@@ -128,6 +140,11 @@ export function ServiciosConexosSectionCards() {
             {averageLoading || averageError || !averageData
               ? ''
               : `Del ${averageData.data.startDate} al ${averageData.data.endDate} - Sistema: ${averageData.data.sistema}`}
+          </div>
+          <div className="text-muted-foreground">
+            {averageLoading || averageError || !averageData
+              ? ''
+              : `Tipo: ${averageData.data.tipoReserva}`}
           </div>
         </CardFooter>
       </Card>
@@ -186,6 +203,11 @@ export function ServiciosConexosSectionCards() {
             {comparisonLoading || comparisonError || !comparisonData
               ? ''
               : `Mes anterior: $${comparisonData.data.previous_month_average.toFixed(2)} - Sistema: ${comparisonData.data.sistema}`}
+          </div>
+          <div className="text-muted-foreground">
+            {comparisonLoading || comparisonError || !comparisonData
+              ? ''
+              : `Tipo: ${comparisonData.data.tipo_reserva}`}
           </div>
         </CardFooter>
       </Card>
