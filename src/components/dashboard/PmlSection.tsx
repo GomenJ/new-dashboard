@@ -1,7 +1,7 @@
 import { SectionCards } from './Metrics/SectionCards';
 import { PmlChart } from './PmlChart';
 import { PmlYearlyChart } from './PmlYearlyChart';
-import { PNDChart } from './PNDChart';
+// import { PNDChart } from './PNDChart';
 
 export default function PmlSection() {
     return (
@@ -27,9 +27,9 @@ export default function PmlSection() {
             </div>
 
             {/* PND Chart Section */}
-            <div className="@container/main mb-8">
+            {/* <div className="@container/main mb-8">
                 <PNDChart />
-            </div>
+            </div> */}
 
             {/* Yearly Comparison Chart Section */}
             <div className="@container/main">

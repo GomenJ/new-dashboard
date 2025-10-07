@@ -23,7 +23,12 @@ interface PmlComparisonResponse {
     trend: "positive" | "negative";
     current_month_daily_averages: Array<{
       date: string;
-      average_pml: number;
+      overall_average_pml: number;
+      nodes_average_pml: Array<{
+        average_pml: number;
+        clave_nodo: string;
+        nombre_nodo: string;
+      }>;
     }>;
     current_month_range: {
       start: string;
@@ -36,9 +41,14 @@ interface PmlComparisonResponse {
   };
 }
 
-interface ChartDataPoint {
-  x: string;
-  y: number;
+interface ChartData {
+  labels: string[];
+  series: Record<string, number[]>;
+}
+
+interface NodeInfo {
+  clave: string;
+  nombre: string;
 }
 
 export function PmlChart() {
@@ -55,32 +65,67 @@ export function PmlChart() {
     },
   });
 
-  const chartData: ChartDataPoint[] = React.useMemo(() => {
-    if (!data?.data?.current_month_daily_averages) return [];
-    
-    return data.data.current_month_daily_averages.map((item) => {
-      // Extract day from date string "2025-10-01" -> "01" -> "1"
-      const dayString = item.date.slice(-2); // Get last 2 characters
-      const day = parseInt(dayString, 10); // Parse to number (removes leading zero)
-      
-      return {
-        x: `Día ${day}`,
-        y: item.average_pml,
+  const { chartData, nodeNames } = React.useMemo((): { chartData: ChartData; nodeNames: NodeInfo[] } => {
+    if (!data?.data?.current_month_daily_averages) {
+      return { 
+        chartData: { labels: [], series: {} }, 
+        nodeNames: [] 
       };
+    }
+    
+    const dailyData = data.data.current_month_daily_averages;
+    
+    // Extract day labels
+    const dayLabels = dailyData.map((item) => {
+      const dayString = item.date.slice(-2);
+      const day = parseInt(dayString, 10);
+      return `Día ${day}`;
     });
+    
+    // Get all unique nodes from the first day to establish consistent series
+    const firstDayNodes = dailyData[0]?.nodes_average_pml || [];
+    const uniqueNodes: NodeInfo[] = firstDayNodes.map(node => ({
+      clave: node.clave_nodo,
+      nombre: node.nombre_nodo
+    }));
+    
+    // Create series data structure
+    const seriesData: Record<string, number[]> = {
+      overall: dailyData.map(item => item.overall_average_pml)
+    };
+    
+    // Add series for each node
+    uniqueNodes.forEach(node => {
+      seriesData[node.clave] = dailyData.map(item => {
+        const nodeData = item.nodes_average_pml.find(n => n.clave_nodo === node.clave);
+        return nodeData ? nodeData.average_pml : 0;
+      });
+    });
+    
+    return { 
+      chartData: { labels: dayLabels, series: seriesData }, 
+      nodeNames: uniqueNodes 
+    };
   }, [data]);
 
   // CSV Download function
   const downloadCSV = React.useCallback(() => {
-    if (!data?.data) return;
+    if (!data?.data || !chartData.labels) return;
 
     const csvRows: string[] = [];
-    const headers = ['Date', 'PML_USD'];
+    const headers = ['Date', 'Series', 'PML_USD'];
     csvRows.push(headers.join(','));
 
-    // Add data rows
-    chartData.forEach((dataPoint) => {
-      csvRows.push(`"${dataPoint.x}",${dataPoint.y}`);
+    // Add overall average data
+    chartData.labels.forEach((label, index) => {
+      csvRows.push(`"${label}","Overall Average",${chartData.series.overall[index]}`);
+    });
+
+    // Add node data
+    nodeNames.forEach(node => {
+      chartData.labels.forEach((label, index) => {
+        csvRows.push(`"${label}","${node.nombre} (${node.clave})",${chartData.series[node.clave][index]}`);
+      });
     });
 
     const csvContent = csvRows.join('\n');
@@ -99,13 +144,20 @@ export function PmlChart() {
       link.click();
       document.body.removeChild(link);
     }
-  }, [data, chartData, market]);
+  }, [data, chartData, nodeNames, market]);
 
   const filteredData = React.useMemo(() => {
-    if (timeRange === "full") return chartData;
+    if (!chartData.labels || timeRange === "full") return chartData;
     
     const days = parseInt(timeRange.replace("d", ""));
-    return chartData.slice(-days);
+    const filteredLabels = chartData.labels.slice(-days);
+    const filteredSeries: Record<string, number[]> = {};
+    
+    Object.keys(chartData.series).forEach(key => {
+      filteredSeries[key] = chartData.series[key].slice(-days);
+    });
+    
+    return { labels: filteredLabels, series: filteredSeries };
   }, [chartData, timeRange]);
 
   const chartOptions: ApexOptions = {
@@ -115,7 +167,7 @@ export function PmlChart() {
       toolbar: { show: false },
       fontFamily: "Inter, sans-serif",
     },
-    colors: ["#2db2ac"],
+    colors: ["#2db2ac", "#a74044", "#f59e0b", "#8b5cf6", "#10b981", "#ef4444", "#06b6d4", "#f97316"],
     dataLabels: { enabled: false },
     stroke: {
       curve: "smooth",
@@ -128,18 +180,6 @@ export function PmlChart() {
         opacityFrom: 0.8,
         opacityTo: 0.1,
         stops: [0, 100],
-        colorStops: [
-          {
-            offset: 0,
-            color: "#2db2ac",
-            opacity: 0.8
-          },
-          {
-            offset: 100,
-            color: "#a74044",
-            opacity: 0.1
-          }
-        ]
       },
     },
     grid: {
@@ -148,7 +188,7 @@ export function PmlChart() {
       borderColor: "hsl(var(--border))",
     },
     xaxis: {
-      categories: filteredData.map(item => item.x),
+      categories: filteredData.labels || [],
       labels: {
         style: {
           colors: "hsl(var(--muted-foreground))",
@@ -174,9 +214,16 @@ export function PmlChart() {
         fontSize: "12px",
         fontFamily: "Inter, sans-serif",
       },
+      shared: true,
+      intersect: false,
       custom: function({series, seriesIndex, dataPointIndex, w}) {
+        const seriesName = w.config.series[seriesIndex].name;
         const value = series[seriesIndex][dataPointIndex];
         const label = w.globals.labels[dataPointIndex];
+        
+        // Check if this is the overall average or a specific node
+        const isOverall = seriesName === "PML Promedio General";
+        const nodeInfo = isOverall ? "" : `<div style="font-size: 11px; opacity: 0.8; margin-bottom: 2px;">${seriesName}</div>`;
         
         return `
           <div style="
@@ -189,6 +236,7 @@ export function PmlChart() {
             font-family: Inter, sans-serif;
           ">
             <div style="font-weight: 600; margin-bottom: 4px;">${label}</div>
+            ${nodeInfo}
             <div style="font-size: 14px; font-weight: 700;">
               $${value.toLocaleString("en-US", { minimumFractionDigits: 2 })}
             </div>
@@ -196,14 +244,37 @@ export function PmlChart() {
         `;
       },
     },
+    legend: {
+      show: true,
+      position: "top",
+      horizontalAlign: "center",
+      labels: {
+        colors: "hsl(var(--muted-foreground))",
+      },
+    },
   };
 
-  const series = [
-    {
-      name: "PML Promedio",
-      data: filteredData.map(item => item.y),
-    },
-  ];
+  const series = React.useMemo(() => {
+    if (!filteredData.series) return [];
+    
+    const seriesArray = [];
+    
+    // Add overall average series first
+    seriesArray.push({
+      name: "PML Promedio General",
+      data: filteredData.series.overall || [],
+    });
+    
+    // Add individual node series
+    nodeNames.forEach((node) => {
+      seriesArray.push({
+        name: `${node.nombre}`,
+        data: filteredData.series[node.clave] || [],
+      });
+    });
+    
+    return seriesArray;
+  }, [filteredData, nodeNames]);
 
   if (error) {
     return (
