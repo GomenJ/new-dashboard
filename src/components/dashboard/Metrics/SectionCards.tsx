@@ -18,14 +18,14 @@ interface ExtremesResponse {
       HoraOperacion: number;
       PrecioMarginalLocal_MWh: number;
       Sistema: string;
-      ClaveNodo: string;
+      ZonaCarga: string;
     };
     min: {
       FechaOperacion: string;
       HoraOperacion: number;
       PrecioMarginalLocal_MWh: number;
       Sistema: string;
-      ClaveNodo: string;
+      ZonaCarga: string;
     };
   };
   status: string;
@@ -221,7 +221,7 @@ export function SectionCards() {
           <div className="text-muted-foreground">
             {isLoading || error || !data
               ? '--'
-              : `Nodo: ${data.data.max.ClaveNodo}`}
+              : `Zona Carga: ${data.data.max.ZonaCarga}`}
           </div>
         </CardFooter>
       </Card>
@@ -256,7 +256,7 @@ export function SectionCards() {
           <div className="text-muted-foreground">
             {isLoading || error || !data
               ? '--'
-              : `Nodo: ${data.data.min.ClaveNodo}`}
+              : `Zona Carga: ${data.data.min.ZonaCarga}`}
           </div>
 
         </CardFooter>
