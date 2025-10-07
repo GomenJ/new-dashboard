@@ -216,7 +216,7 @@ export function DemandYearlyChart() {
           colors: "hsl(var(--muted-foreground))",
           fontSize: "12px",
         },
-        formatter: (value: number) => `${value.toLocaleString("en-US", { maximumFractionDigits: 0 })} MW`,
+        formatter: (value: number) => `${value?.toLocaleString("en-US", { maximumFractionDigits: 0 }) || '0'} MW`,
       },
     },
     tooltip: {
@@ -234,6 +234,20 @@ export function DemandYearlyChart() {
         const currentYear = w.config.series[0].name;
         const previousYear = w.config.series[1].name;
         
+        // Handle undefined/null values when series is hidden
+        if ((currentYearValue === undefined || currentYearValue === null) && 
+            (previousYearValue === undefined || previousYearValue === null)) {
+          return '';
+        }
+        
+        const currentDisplay = (currentYearValue !== undefined && currentYearValue !== null) 
+          ? currentYearValue.toLocaleString("en-US", { maximumFractionDigits: 0 }) + " MW"
+          : "N/A";
+        
+        const previousDisplay = (previousYearValue !== undefined && previousYearValue !== null) 
+          ? previousYearValue.toLocaleString("en-US", { maximumFractionDigits: 0 }) + " MW" 
+          : "N/A";
+        
         return `
           <div style="
             background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
@@ -249,12 +263,12 @@ export function DemandYearlyChart() {
             <div style="display: flex; align-items: center; margin-bottom: 3px;">
               <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #3b82f6; margin-right: 6px;"></div>
               <span style="font-size: 11px; color: rgba(255, 255, 255, 0.8);">${currentYear}:</span>
-              <span style="font-weight: 600; margin-left: 4px; font-size: 12px;">${currentYearValue.toLocaleString("en-US", { maximumFractionDigits: 0 })} MW</span>
+              <span style="font-weight: 600; margin-left: 4px; font-size: 12px;">${currentDisplay}</span>
             </div>
             <div style="display: flex; align-items: center;">
               <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #ef4444; margin-right: 6px;"></div>
               <span style="font-size: 11px; color: rgba(255, 255, 255, 0.8);">${previousYear}:</span>
-              <span style="font-weight: 600; margin-left: 4px; font-size: 12px;">${previousYearValue.toLocaleString("en-US", { maximumFractionDigits: 0 })} MW</span>
+              <span style="font-weight: 600; margin-left: 4px; font-size: 12px;">${previousDisplay}</span>
             </div>
           </div>
         `;

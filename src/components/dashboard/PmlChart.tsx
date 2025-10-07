@@ -205,7 +205,7 @@ export function PmlChart() {
           colors: "hsl(var(--muted-foreground))",
           fontSize: "12px",
         },
-        formatter: (value: number) => `$${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`,
+        formatter: (value: number) => `$${value?.toLocaleString("en-US", { maximumFractionDigits: 0 }) || '0'}`,
       },
     },
     tooltip: {
@@ -216,32 +216,48 @@ export function PmlChart() {
       },
       shared: true,
       intersect: false,
-      custom: function({series, seriesIndex, dataPointIndex, w}) {
-        const seriesName = w.config.series[seriesIndex].name;
-        const value = series[seriesIndex][dataPointIndex];
+      custom: function({series, dataPointIndex, w}) {
         const label = w.globals.labels[dataPointIndex];
-        
-        // Check if this is the overall average or a specific node
-        const isOverall = seriesName === "PML Promedio General";
-        const nodeInfo = isOverall ? "" : `<div style="font-size: 11px; opacity: 0.8; margin-bottom: 2px;">${seriesName}</div>`;
-        
-        return `
+        let tooltipContent = `
           <div style="
             background: linear-gradient(135deg, #2db2ac 0%, #1a9b94 100%);
             color: white;
-            padding: 12px 16px;
-            border-radius: 8px;
+            padding: 10px 12px;
+            border-radius: 6px;
             box-shadow: 0 4px 12px rgba(45, 178, 172, 0.3);
             border: 1px solid rgba(255, 255, 255, 0.2);
             font-family: Inter, sans-serif;
+            min-width: 200px;
           ">
-            <div style="font-weight: 600; margin-bottom: 4px;">${label}</div>
-            ${nodeInfo}
-            <div style="font-size: 14px; font-weight: 700;">
-              $${value.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-            </div>
-          </div>
+            <div style="font-weight: 600; margin-bottom: 6px; font-size: 12px;">${label}</div>
         `;
+        
+        let hasData = false;
+        
+        // Add each series data point
+        series.forEach((seriesData: number[], index: number) => {
+          if (seriesData[dataPointIndex] !== null && seriesData[dataPointIndex] !== undefined) {
+            hasData = true;
+            const seriesName = w.config.series[index].name;
+            const seriesColor = w.config.colors[index];
+            const value = seriesData[dataPointIndex];
+            
+            tooltipContent += `
+              <div style="display: flex; align-items: center; margin-bottom: 3px;">
+                <div style="width: 8px; height: 8px; border-radius: 50%; background-color: ${seriesColor}; margin-right: 6px;"></div>
+                <span style="font-size: 11px; color: rgba(255, 255, 255, 0.8);">${seriesName}:</span>
+                <span style="font-weight: 600; margin-left: 4px; font-size: 12px;">$${value.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+              </div>
+            `;
+          }
+        });
+        
+        if (!hasData) {
+          return '';
+        }
+        
+        tooltipContent += '</div>';
+        return tooltipContent;
       },
     },
     legend: {

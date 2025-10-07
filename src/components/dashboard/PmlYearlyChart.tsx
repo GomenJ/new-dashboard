@@ -359,7 +359,7 @@ export function PmlYearlyChart() {
           colors: "hsl(var(--muted-foreground))",
           fontSize: "12px",
         },
-        formatter: (value: number) => `$${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`,
+        formatter: (value: number) => `$${value?.toLocaleString("en-US", { maximumFractionDigits: 0 }) || '0'}`,
       },
     },
     tooltip: {
@@ -386,9 +386,12 @@ export function PmlYearlyChart() {
             <div style="font-weight: 600; margin-bottom: 6px; font-size: 12px;">${label}</div>
         `;
         
+        let hasData = false;
+        
         // Add each series data point
         series.forEach((seriesData: number[], index: number) => {
-          if (seriesData[dataPointIndex] !== null) {
+          if (seriesData[dataPointIndex] !== null && seriesData[dataPointIndex] !== undefined) {
+            hasData = true;
             const seriesName = w.config.series[index].name;
             const seriesColor = w.config.colors[index];
             const value = seriesData[dataPointIndex];
@@ -402,6 +405,10 @@ export function PmlYearlyChart() {
             `;
           }
         });
+        
+        if (!hasData) {
+          return '';
+        }
         
         tooltipContent += '</div>';
         return tooltipContent;
