@@ -11,31 +11,23 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import Select from "@/components/form/Select";
+import { ChartActionsMenu } from "@/components/common/ChartActionsMenu";
 
 interface DemandYearlyComparisonResponse {
   currentYearData: Array<{
     Fecha: string;
-    MaxDemanda_MWh: number;
-    Hora: number;
+    MaxDemandaHoraria_MWh: number;
   }>;
   previousYearData: Array<{
     Fecha: string;
-    MaxDemanda_MWh: number;
-    Hora: number;
+    MaxDemandaHoraria_MWh: number;
   }>;
 }
 
-const gerenciaOptions = [
-  { value: "all", label: "Todas" },
-  { value: "Baja California", label: "Baja California" },
-  { value: "Baja California Sur", label: "Baja California Sur" },
-  { value: "Occidental", label: "Occidental" },
-  { value: "Oriental", label: "Oriental" },
-  { value: "Noreste", label: "Noreste" },
-  { value: "Norte", label: "Norte" },
-  { value: "Noroeste", label: "Noroeste" },
-  { value: "Central", label: "Central" },
-  { value: "Peninsular", label: "Peninsular" },
+const sistemaOptions = [
+  { value: "SIN", label: "SIN" },
+  { value: "BCA", label: "BCA" },
+  { value: "BCS", label: "BCS" },
 ];
 
 const timeRangeOptions = [
@@ -46,20 +38,20 @@ const timeRangeOptions = [
 ];
 
 export function DemandYearlyChart() {
-  const [selectedGerencia, setSelectedGerencia] = React.useState("all");
+  const [selectedSistema, setSelectedSistema] = React.useState("SIN");
   const [timeRange, setTimeRange] = React.useState("full");
 
   const { data, isLoading, error } = useQuery<DemandYearlyComparisonResponse, Error>({
-    queryKey: ["demand-yearly-comparison", selectedGerencia, timeRange],
+    queryKey: ["demand-yearly-comparison", selectedSistema, timeRange],
     queryFn: async () => {
-      const url = `${import.meta.env.VITE_API_URL}/api/v1/demanda/daily-peak-comparison?gerencia=${selectedGerencia}`;
+      const url = `${import.meta.env.VITE_API_URL}/api/v1/demanda-real-balance/yearly_peak_demand_comparison?sistema=${selectedSistema}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch demand yearly comparison data");
       return res.json();
     },
   });
 
-  const processYearData = React.useCallback((yearData: Array<{Fecha: string, MaxDemanda_MWh: number, Hora: number}>) => {
+  const processYearData = React.useCallback((yearData: Array<{Fecha: string, MaxDemandaHoraria_MWh: number}>) => {
     if (!yearData || yearData.length === 0) return [];
     
     return yearData.map((item) => {
@@ -75,8 +67,7 @@ export function DemandYearlyChart() {
       
       return {
         x: `${monthNames[monthNumber - 1]} ${dayNumber}`,
-        y: item.MaxDemanda_MWh,
-        hora: item.Hora, // Store hour for tooltip
+        y: item.MaxDemandaHoraria_MWh,
       };
     });
   }, []);
@@ -90,7 +81,7 @@ export function DemandYearlyChart() {
     };
     
     // Filter data based on time range
-    const filterByTimeRange = (yearData: Array<{Fecha: string, MaxDemanda_MWh: number, Hora: number}>, isCurrentYear: boolean = true) => {
+    const filterByTimeRange = (yearData: Array<{Fecha: string, MaxDemandaHoraria_MWh: number}>, isCurrentYear: boolean = true) => {
       if (!yearData || yearData.length === 0) return [];
       if (timeRange === "full") return yearData; // Return all data for "Todo el año"
       
@@ -136,6 +127,43 @@ export function DemandYearlyChart() {
       previousYear
     };
   }, [data, processYearData, timeRange]);
+
+  const handleDownloadCSV = React.useCallback(() => {
+    if (!currentYearData.length && !previousYearData.length) return;
+
+    // Create CSV header
+    const headers = ['Fecha', `${currentYear}`, `${previousYear}`];
+    
+    // Create CSV rows - match data points by index
+    const maxLength = Math.max(currentYearData.length, previousYearData.length);
+    const rows = [];
+    
+    for (let i = 0; i < maxLength; i++) {
+      const currentItem = currentYearData[i];
+      const previousItem = previousYearData[i];
+      const label = currentItem?.x || previousItem?.x || `Punto ${i + 1}`;
+      const currentValue = currentItem?.y || '';
+      const previousValue = previousItem?.y || '';
+      
+      rows.push([label, currentValue, previousValue]);
+    }
+
+    // Combine headers and rows
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .join('\\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `demanda_yearly_${selectedSistema}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [currentYearData, previousYearData, currentYear, previousYear, selectedSistema]);
 
   const chartOptions: ApexOptions = {
     chart: {
@@ -206,10 +234,6 @@ export function DemandYearlyChart() {
         const currentYear = w.config.series[0].name;
         const previousYear = w.config.series[1].name;
         
-        // Get hour information from processed data
-        const currentYearHour = currentYearData[dataPointIndex]?.hora || '--';
-        const previousYearHour = previousYearData[dataPointIndex]?.hora || '--';
-        
         return `
           <div style="
             background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
@@ -226,13 +250,11 @@ export function DemandYearlyChart() {
               <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #3b82f6; margin-right: 6px;"></div>
               <span style="font-size: 11px; color: rgba(255, 255, 255, 0.8);">${currentYear}:</span>
               <span style="font-weight: 600; margin-left: 4px; font-size: 12px;">${currentYearValue.toLocaleString("en-US", { maximumFractionDigits: 0 })} MW</span>
-              <span style="margin-left: 8px; font-size: 10px; color: rgba(255, 255, 255, 0.6);">@${currentYearHour}:00h</span>
             </div>
             <div style="display: flex; align-items: center;">
               <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #ef4444; margin-right: 6px;"></div>
               <span style="font-size: 11px; color: rgba(255, 255, 255, 0.8);">${previousYear}:</span>
               <span style="font-weight: 600; margin-left: 4px; font-size: 12px;">${previousYearValue.toLocaleString("en-US", { maximumFractionDigits: 0 })} MW</span>
-              <span style="margin-left: 8px; font-size: 10px; color: rgba(255, 255, 255, 0.6);">@${previousYearHour}:00h</span>
             </div>
           </div>
         `;
@@ -275,18 +297,18 @@ export function DemandYearlyChart() {
         <CardTitle>Demanda Máxima Diaria: {currentYear} vs {previousYear}</CardTitle>
         <CardDescription>
           <span className="hidden @[540px]/card:block">
-            Comparación anual de la demanda máxima diaria por gerencia - {selectedGerencia === 'all' ? 'Todas' : selectedGerencia}
+            Comparación anual de la demanda máxima diaria por sistema - {selectedSistema}
           </span>
-          <span className="@[540px]/card:hidden">Demanda Anual - {selectedGerencia === 'all' ? 'Todas' : selectedGerencia}</span>
+          <span className="@[540px]/card:hidden">Demanda Anual - {selectedSistema}</span>
         </CardDescription>
         <CardAction>
           <div className="flex gap-2">
             <Select
-              defaultValue={selectedGerencia}
-              onChange={setSelectedGerencia}
-              className="w-40"
-              placeholder="Gerencia"
-              options={gerenciaOptions}
+              defaultValue={selectedSistema}
+              onChange={setSelectedSistema}
+              className="w-32"
+              placeholder="Sistema"
+              options={sistemaOptions}
             />
             <Select
               defaultValue={timeRange}
@@ -294,6 +316,10 @@ export function DemandYearlyChart() {
               className="w-fit max-w-70"
               placeholder="Período"
               options={timeRangeOptions}
+            />
+            <ChartActionsMenu 
+              onDownloadCSV={handleDownloadCSV}
+              disabled={isLoading || (!currentYearData.length && !previousYearData.length)}
             />
           </div>
         </CardAction>

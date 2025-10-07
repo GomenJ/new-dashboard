@@ -11,18 +11,20 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import Select from "@/components/form/Select";
+import { ChartActionsMenu } from "@/components/common/ChartActionsMenu";
 
 interface ServiciosResponse {
   status: string;
   data: Array<{
     date: string;
-    daily_average_price: number;
+    averages: {
+      "Reserva de regulacion secundaria"?: number;
+      "Reserva no rodante de 10 minutos"?: number;
+      "Reserva no rodante suplementarias"?: number;
+      "Reserva rodante de 10 minutos"?: number;
+      "Reserva rodante suplementaria"?: number;
+    };
   }>;
-}
-
-interface ChartDataPoint {
-  x: string;
-  y: number;
 }
 
 export function ServiciosChart() {
@@ -40,61 +42,71 @@ export function ServiciosChart() {
     },
   });
 
-  const chartData: ChartDataPoint[] = React.useMemo(() => {
-    if (!data?.data) return [];
+  const reserveTypes = [
+    "Reserva de regulacion secundaria",
+    "Reserva rodante de 10 minutos",
+    "Reserva no rodante de 10 minutos", 
+    "Reserva no rodante suplementarias",
+    "Reserva rodante suplementaria"
+  ];
+
+  const colors = ["#0d9488", "#dc2626", "#d97706", "#7c3aed", "#059669"];
+
+  const chartData = React.useMemo(() => {
+    if (!data?.data) return { categories: [], series: [] };
     
-    return data.data.map((item) => {
-      // Extract day from date string "2025-10-01" -> "01" -> "1"
-      const dayString = item.date.slice(-2); // Get last 2 characters
-      const day = parseInt(dayString, 10); // Parse to number (removes leading zero)
-      
-      return {
-        x: `Día ${day}`,
-        y: item.daily_average_price,
-      };
+    const categories = data.data.map((item) => {
+      const dayString = item.date.slice(-2);
+      const day = parseInt(dayString, 10);
+      return `Día ${day}`;
     });
+
+    const series = reserveTypes
+      .map((reserveType) => {
+        const seriesData = data.data.map(item => {
+          const value = item.averages[reserveType as keyof typeof item.averages];
+          return value !== undefined ? value : 0;
+        });
+        
+        // Only include series that have at least one non-zero value
+        if (seriesData.some(value => value > 0)) {
+          return {
+            name: reserveType,
+            data: seriesData
+          };
+        }
+        return null;
+      })
+      .filter(Boolean) as Array<{ name: string; data: number[] }>;
+    
+    return { categories, series };
   }, [data]);
 
   const filteredData = React.useMemo(() => {
     if (timeRange === "full") return chartData;
     
     const days = parseInt(timeRange.replace("d", ""));
-    return chartData.slice(-days);
+    return {
+      categories: chartData.categories.slice(-days),
+      series: chartData.series.map(serie => ({
+        ...serie,
+        data: serie.data.slice(-days)
+      }))
+    };
   }, [chartData, timeRange]);
 
   const chartOptions: ApexOptions = {
     chart: {
-      type: "area",
+      type: "line",
       height: 250,
       toolbar: { show: false },
       fontFamily: "Inter, sans-serif",
     },
-    colors: ["#2db2ac"],
+    colors: colors,
     dataLabels: { enabled: false },
     stroke: {
       curve: "smooth",
-      width: 2,
-    },
-    fill: {
-      type: "gradient",
-      gradient: {
-        shadeIntensity: 1,
-        opacityFrom: 0.8,
-        opacityTo: 0.1,
-        stops: [0, 100],
-        colorStops: [
-          {
-            offset: 0,
-            color: "#2db2ac",
-            opacity: 0.8
-          },
-          {
-            offset: 100,
-            color: "#a74044",
-            opacity: 0.1
-          }
-        ]
-      },
+      width: 3,
     },
     grid: {
       show: true,
@@ -102,7 +114,7 @@ export function ServiciosChart() {
       borderColor: "hsl(var(--border))",
     },
     xaxis: {
-      categories: filteredData.map(item => item.x),
+      categories: filteredData.categories,
       labels: {
         style: {
           colors: "hsl(var(--muted-foreground))",
@@ -128,36 +140,57 @@ export function ServiciosChart() {
         fontSize: "12px",
         fontFamily: "Inter, sans-serif",
       },
-      custom: function({series, seriesIndex, dataPointIndex, w}) {
-        const value = series[seriesIndex][dataPointIndex];
-        const label = w.globals.labels[dataPointIndex];
-        
-        return `
-          <div style="
-            background: linear-gradient(135deg, #2db2ac 0%, #1a9b94 100%);
-            color: white;
-            padding: 12px 16px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(45, 178, 172, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            font-family: Inter, sans-serif;
-          ">
-            <div style="font-weight: 600; margin-bottom: 4px;">${label}</div>
-            <div style="font-size: 14px; font-weight: 700;">
-              $${value.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-            </div>
-          </div>
-        `;
-      },
+      shared: true,
+      intersect: false,
+      y: {
+        formatter: (value: number, { seriesName }: any) => {
+          return `${seriesName}: $${value?.toLocaleString("en-US", { minimumFractionDigits: 2 }) || 'N/A'}`;
+        }
+      }
+    },
+    legend: {
+      show: true,
+      position: "bottom",
+      horizontalAlign: "center",
+      fontSize: "12px",
+      fontFamily: "Inter, sans-serif",
+      markers: {
+        size: 6
+      }
     },
   };
 
-  const series = [
-    {
-      name: "Servicios Conexos Promedio",
-      data: filteredData.map(item => item.y),
-    },
-  ];
+  const handleDownloadCSV = React.useCallback(() => {
+    if (!data?.data || !filteredData.series.length) return;
+
+    // Create CSV header
+    const headers = ['Fecha', ...filteredData.series.map(s => s.name)];
+    
+    // Create CSV rows
+    const rows = filteredData.categories.map((_, index) => {
+      const date = data.data[index]?.date || '';
+      const values = filteredData.series.map(series => series.data[index] || 0);
+      return [date, ...values];
+    });
+
+    // Combine headers and rows
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `servicios_conexos_${market}_${sistema}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [data, filteredData, market, sistema]);
+
+  const series = filteredData.series;
 
   if (error) {
     return (
@@ -213,6 +246,10 @@ export function ServiciosChart() {
                 { value: "15d", label: "Últimos 15 días" },
               ]}
             />
+            <ChartActionsMenu 
+              onDownloadCSV={handleDownloadCSV}
+              disabled={isLoading || !data?.data?.length}
+            />
           </div>
         </CardAction>
       </CardHeader>
@@ -226,17 +263,17 @@ export function ServiciosChart() {
           <Chart
             options={chartOptions}
             series={series}
-            type="area"
+            type="line"
             height={250}
           />
         )}
         {data && (
           <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
             <span>
-              Promedio del período: ${(chartData.reduce((sum, item) => sum + item.y, 0) / chartData.length || 0).toFixed(2)}
+              {filteredData.series.length} tipos de reserva
             </span>
             <span className="text-muted-foreground">
-              {chartData.length} días de datos
+              {filteredData.categories.length} días de datos
             </span>
           </div>
         )}

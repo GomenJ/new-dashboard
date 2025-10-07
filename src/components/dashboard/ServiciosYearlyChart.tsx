@@ -11,19 +11,24 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import Select from "@/components/form/Select";
+import { ChartActionsMenu } from "@/components/common/ChartActionsMenu";
 
 interface ServiciosYearlyComparisonResponse {
   status: string;
   data: {
     sistema: string;
-    currentYearData: Array<{
-      Fecha: string;
-      AvgPrecioReserva: number;
-    }>;
-    previousYearData: Array<{
-      Fecha: string;
-      AvgPrecioReserva: number;
-    }>;
+    comparison: {
+      [reserveType: string]: {
+        currentYearData: Array<{
+          Fecha: string;
+          AvgPrecioReserva: number;
+        }>;
+        previousYearData: Array<{
+          Fecha: string;
+          AvgPrecioReserva: number;
+        }>;
+      };
+    };
   };
 }
 
@@ -44,6 +49,7 @@ export function ServiciosYearlyChart() {
   const [selectedSystem, setSelectedSystem] = React.useState("SIN");
   const [timeRange, setTimeRange] = React.useState("full");
   const [market, setMarket] = React.useState("mda");
+  const [selectedReserveType, setSelectedReserveType] = React.useState("");
 
   const { data, isLoading, error } = useQuery<ServiciosYearlyComparisonResponse, Error>({
     queryKey: ["servicios-yearly-comparison", market, selectedSystem, timeRange],
@@ -54,6 +60,16 @@ export function ServiciosYearlyChart() {
       return res.json();
     },
   });
+
+  // Auto-select first reserve type when data loads
+  React.useEffect(() => {
+    if (data?.data?.comparison && !selectedReserveType) {
+      const reserveTypes = Object.keys(data.data.comparison);
+      if (reserveTypes.length > 0) {
+        setSelectedReserveType(reserveTypes[0]);
+      }
+    }
+  }, [data, selectedReserveType]);
 
   const processYearData = React.useCallback((yearData: Array<{Fecha: string, AvgPrecioReserva: number}>) => {
     return yearData.map((item) => {
@@ -74,33 +90,45 @@ export function ServiciosYearlyChart() {
     });
   }, []);
 
-  const { currentYearData, previousYearData, currentYear, previousYear } = React.useMemo(() => {
-    if (!data?.data) return { 
+  const { currentYearData, previousYearData, currentYear, previousYear, availableReserveTypes } = React.useMemo(() => {
+    if (!data?.data?.comparison) return { 
       currentYearData: [], 
       previousYearData: [],
       currentYear: new Date().getFullYear(),
-      previousYear: new Date().getFullYear() - 1
+      previousYear: new Date().getFullYear() - 1,
+      availableReserveTypes: []
     };
+    
+    const reserveTypes = Object.keys(data.data.comparison);
+    
+    const selectedData = data.data.comparison[selectedReserveType];
+    if (!selectedData) {
+      return {
+        currentYearData: [], 
+        previousYearData: [],
+        currentYear: new Date().getFullYear(),
+        previousYear: new Date().getFullYear() - 1,
+        availableReserveTypes: reserveTypes
+      };
+    }
     
     // Filter data based on time range
     const filterByTimeRange = (yearData: Array<{Fecha: string, AvgPrecioReserva: number}>, isCurrentYear: boolean = true) => {
-      if (timeRange === "full") return yearData; // Return all data for "Todo el año"
+      if (timeRange === "full") return yearData;
       
       const months = timeRange === "3m" ? 3 : timeRange === "6m" ? 6 : 9;
       const currentDate = new Date();
       
       if (isCurrentYear) {
-        // For current year: filter based on current date
         const cutoffDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - months + 1, 1);
         return yearData.filter(item => {
           const itemDate = new Date(item.Fecha);
           return itemDate >= cutoffDate;
         });
       } else {
-        // For previous year: filter the same period from previous year
         const prevYear = currentDate.getFullYear() - 1;
         const cutoffDate = new Date(prevYear, currentDate.getMonth() - months + 1, 1);
-        const endDate = new Date(prevYear, currentDate.getMonth() + 1, 0); // Last day of current month in prev year
+        const endDate = new Date(prevYear, currentDate.getMonth() + 1, 0);
         
         return yearData.filter(item => {
           const itemDate = new Date(item.Fecha);
@@ -109,25 +137,62 @@ export function ServiciosYearlyChart() {
       }
     };
     
-    const filteredCurrentYear = filterByTimeRange(data.data.currentYearData, true);
-    const filteredPreviousYear = filterByTimeRange(data.data.previousYearData, false);
+    const filteredCurrentYear = filterByTimeRange(selectedData.currentYearData, true);
+    const filteredPreviousYear = filterByTimeRange(selectedData.previousYearData, false);
     
     const processedCurrentYear = processYearData(filteredCurrentYear);
     const processedPreviousYear = processYearData(filteredPreviousYear);
     
-    // Extract years from the first date in each dataset
-    const currentYear = data.data.currentYearData[0]?.Fecha ? 
-      parseInt(data.data.currentYearData[0].Fecha.slice(0, 4)) : new Date().getFullYear();
-    const previousYear = data.data.previousYearData[0]?.Fecha ? 
-      parseInt(data.data.previousYearData[0].Fecha.slice(0, 4)) : new Date().getFullYear() - 1;
+    const currentYear = selectedData.currentYearData[0]?.Fecha ? 
+      parseInt(selectedData.currentYearData[0].Fecha.slice(0, 4)) : new Date().getFullYear();
+    const previousYear = selectedData.previousYearData[0]?.Fecha ? 
+      parseInt(selectedData.previousYearData[0].Fecha.slice(0, 4)) : new Date().getFullYear() - 1;
     
     return {
       currentYearData: processedCurrentYear,
       previousYearData: processedPreviousYear,
       currentYear,
-      previousYear
+      previousYear,
+      availableReserveTypes: reserveTypes
     };
-  }, [data, processYearData, timeRange]);
+  }, [data, processYearData, timeRange, selectedReserveType]);
+
+  const handleDownloadCSV = React.useCallback(() => {
+    if (!currentYearData.length && !previousYearData.length) return;
+
+    // Create CSV header
+    const headers = ['Fecha', `${currentYear}`, `${previousYear}`];
+    
+    // Create CSV rows - match data points by index
+    const maxLength = Math.max(currentYearData.length, previousYearData.length);
+    const rows = [];
+    
+    for (let i = 0; i < maxLength; i++) {
+      const currentItem = currentYearData[i];
+      const previousItem = previousYearData[i];
+      const label = currentItem?.x || previousItem?.x || `Punto ${i + 1}`;
+      const currentValue = currentItem?.y || '';
+      const previousValue = previousItem?.y || '';
+      
+      rows.push([label, currentValue, previousValue]);
+    }
+
+    // Combine headers and rows
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `servicios_yearly_${selectedReserveType.replace(/\s+/g, '_')}_${market}_${selectedSystem}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [currentYearData, previousYearData, currentYear, previousYear, selectedReserveType, market, selectedSystem]);
 
   const chartOptions: ApexOptions = {
     chart: {
@@ -262,7 +327,7 @@ export function ServiciosYearlyChart() {
         <CardTitle>Promedio Diario: {currentYear} vs {previousYear} ({market.toUpperCase()})</CardTitle>
         <CardDescription>
           <span className="hidden @[540px]/card:block">
-            Comparación anual de los precios de servicios conexos por sistema - {data?.data?.sistema || selectedSystem}
+            Comparación anual de {selectedReserveType || 'servicios conexos'} por sistema - {data?.data?.sistema || selectedSystem}
           </span>
           <span className="@[540px]/card:hidden">Servicios Anual - {data?.data?.sistema || selectedSystem}</span>
         </CardDescription>
@@ -286,11 +351,26 @@ export function ServiciosYearlyChart() {
               options={systemOptions}
             />
             <Select
+              key={selectedReserveType}
+              defaultValue={selectedReserveType}
+              onChange={setSelectedReserveType}
+              className="w-60"
+              placeholder="Tipo de Reserva"
+              options={availableReserveTypes.map(type => ({
+                value: type,
+                label: type
+              }))}
+            />
+            <Select
               defaultValue={timeRange}
               onChange={setTimeRange}
               className="w-fit max-w-70"
               placeholder="Período"
               options={timeRangeOptions}
+            />
+            <ChartActionsMenu 
+              onDownloadCSV={handleDownloadCSV}
+              disabled={isLoading || (!currentYearData.length && !previousYearData.length)}
             />
           </div>
         </CardAction>
