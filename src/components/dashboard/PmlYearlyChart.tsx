@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useDeferredValue } from "react";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { useQuery } from "@tanstack/react-query";
@@ -238,6 +239,38 @@ export function PmlYearlyChart() {
     return seriesData;
   }, [processedData, categories, currentYear, previousYear]);
 
+  // Use deferred value for performance optimization
+  const deferredSeries = useDeferredValue(series);
+  const deferredCategories = useDeferredValue(categories);
+
+  // Brush chart series - use full data but simplified for performance
+  const brushSeries = React.useMemo(() => {
+    if (!deferredSeries.length) return [];
+    
+    // Use full data for brush chart to ensure proper range representation
+    // Only take the first 2 series (most important ones) to reduce complexity
+    const mainSeries = deferredSeries.slice(0, Math.min(2, deferredSeries.length));
+    
+    console.log('Brush chart data range:', {
+      totalCategories: deferredCategories.length,
+      firstCategory: deferredCategories[0],
+      lastCategory: deferredCategories[deferredCategories.length - 1],
+      seriesCount: mainSeries.length,
+      dataPointsPerSeries: mainSeries[0]?.data.length
+    });
+    
+    return mainSeries.map(serie => ({
+      name: serie.name,
+      data: serie.data, // Use full data for accurate brush representation
+      color: serie.color
+    }));
+  }, [deferredSeries, deferredCategories]);
+
+  const brushCategories = React.useMemo(() => {
+    // Use full categories for brush chart to ensure complete range
+    return deferredCategories;
+  }, [deferredCategories]);
+
   // CSV Download function
   const downloadCSV = React.useCallback(() => {
     if (!data?.data) return;
@@ -285,12 +318,32 @@ export function PmlYearlyChart() {
 
   const chartOptions: ApexOptions = {
     chart: {
+      id: 'main-chart',
       type: "area",
-      height: 350, // Increased height to accommodate rotated labels
-      toolbar: { show: false },
+      height: 300,
+      toolbar: { 
+        show: false,
+        autoSelected: 'pan'
+      },
       fontFamily: "Inter, sans-serif",
+      animations: {
+        enabled: false  // Disable animations for better performance
+      },
+      zoom: {
+        enabled: true,  // Enable zoom on main chart
+        type: 'x',
+        autoScaleYaxis: true
+      },
+      selection: {
+        enabled: true,
+        xaxis: {
+          // Start main chart with full range visible
+          min: 0,
+          max: deferredCategories.length - 1
+        }
+      }
     },
-    colors: series.map(s => s.color),
+    colors: deferredSeries.map(s => s.color),
     dataLabels: { enabled: false },
     stroke: {
       curve: "smooth",
@@ -311,44 +364,19 @@ export function PmlYearlyChart() {
       borderColor: "hsl(var(--border))",
     },
     xaxis: {
-      categories: categories,
+      categories: deferredCategories,
       labels: {
         style: {
           colors: "hsl(var(--muted-foreground))",
-          fontSize: "11px", // Slightly smaller font
+          fontSize: "11px",
         },
-        rotate: -45, // Rotate labels to prevent overlap
-        maxHeight: 60, // Limit label height
-        trim: true, // Trim long labels
+        rotate: -45,
+        maxHeight: 60,
+        trim: true,
         show: true,
         showDuplicates: false,
-        // Dynamically show fewer labels based on data size and time range
-        ...(categories.length > 30 && {
-          formatter: function(value: string, _timestamp?: number, opts?: any) {
-            if (!opts || !opts.dataPointIndex) return value;
-            const index = opts.dataPointIndex;
-            
-            // For full year or large datasets, show only certain intervals
-            if (timeRange === "full") {
-              // Show only first day of each month or every 15th day
-              const dayMatch = value.match(/(\w+)\s+(\d+)/);
-              if (dayMatch) {
-                const day = parseInt(dayMatch[2]);
-                return (day === 1 || day === 15) ? value : "";
-              }
-            } else if (categories.length > 60) {
-              // For very large datasets, show every 4th label
-              return index % 4 === 0 ? value : "";
-            } else if (categories.length > 30) {
-              // For medium datasets, show every 2nd label
-              return index % 2 === 0 ? value : "";
-            }
-            
-            return value;
-          }
-        })
       },
-      tickAmount: timeRange === "full" ? 24 : timeRange === "9m" ? 18 : timeRange === "6m" ? 12 : Math.min(categories.length, 15),
+      tickAmount: timeRange === "full" ? 24 : timeRange === "9m" ? 18 : timeRange === "6m" ? 12 : Math.min(deferredCategories.length, 15),
       axisBorder: { show: false },
       axisTicks: { show: false },
     },
@@ -424,6 +452,82 @@ export function PmlYearlyChart() {
     },
   };
 
+  // Brush chart options
+  const brushChartOptions: ApexOptions = {
+    chart: {
+      id: 'brush-chart',
+      height: 130,
+      type: 'area',
+      brush: {
+        target: 'main-chart',
+        enabled: true
+      },
+      selection: {
+        enabled: true,
+        xaxis: {
+          // Start with full window open
+          min: 0,
+          max: brushCategories.length - 1
+        }
+      },
+      animations: {
+        enabled: false  // Disable animations for better performance
+      },
+      toolbar: {
+        show: false
+      }
+    },
+    colors: brushSeries.map(s => s.color),
+    stroke: {
+      width: 1,
+      curve: 'smooth'
+    },
+    fill: {
+      type: 'gradient',
+      gradient: {
+        opacityFrom: 0.4,
+        opacityTo: 0.1,
+      }
+    },
+    markers: {
+      size: 0  // Remove markers for performance
+    },
+    xaxis: {
+      categories: brushCategories,
+      tooltip: {
+        enabled: false
+      },
+      labels: {
+        show: false
+      },
+      axisBorder: {
+        show: false
+      },
+      axisTicks: {
+        show: false
+      }
+    },
+    yaxis: {
+      max: brushSeries.length > 0 ? Math.max(...brushSeries.flatMap(s => s.data.filter((d: any) => d !== null && d !== undefined))) : 100,
+      tickAmount: 2,
+      labels: {
+        show: false
+      }
+    },
+    tooltip: {
+      enabled: false
+    },
+    legend: {
+      show: false
+    },
+    grid: {
+      show: false
+    },
+    dataLabels: {
+      enabled: false
+    }
+  };
+
   if (error) {
     return (
       <Card className="@container/card">
@@ -492,12 +596,25 @@ export function PmlYearlyChart() {
             <p className="text-muted-foreground">No hay datos disponibles</p>
           </div>
         ) : (
-          <Chart
-            options={chartOptions}
-            series={series}
-            type="area"
-            height={350}
-          />
+          <div className="space-y-4">
+            {/* Main Chart */}
+            <Chart
+              options={chartOptions}
+              series={deferredSeries}
+              type="area"
+              height={300}
+            />
+            
+            {/* Brush Chart */}
+            <div className="border-t pt-4">
+              <Chart
+                options={brushChartOptions}
+                series={brushSeries}
+                type="area" 
+                height={130}
+              />
+            </div>
+          </div>
         )}
         {data && Object.keys(chartData).length > 0 && (
           <div className="mt-4 space-y-2">
@@ -527,6 +644,9 @@ export function PmlYearlyChart() {
                   </div>
                 );
               })}
+            </div>
+            <div className="text-xs text-muted-foreground mt-2 pt-2 border-t">
+              💡 Arrastra en el gráfico inferior para navegar por todo el año ({deferredCategories.length} puntos de datos disponibles)
             </div>
           </div>
         )}
