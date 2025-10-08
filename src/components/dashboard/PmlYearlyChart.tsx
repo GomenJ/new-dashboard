@@ -27,7 +27,24 @@ interface PmlYearlyComparisonResponse {
       Fecha: string;
       AvgPML: number;
     }>;
+    nodes?: {
+      [nodeKey: string]: {
+        currentYearData: Array<{
+          Fecha: string;
+          AvgPML: number;
+        }>;
+        previousYearData: Array<{
+          Fecha: string;
+          AvgPML: number;
+        }>;
+      };
+    };
   };
+}
+
+interface NodeSearchResponse {
+  status: string;
+  data: string[]; // Just an array of node claves
 }
 
 const systemOptions = [
@@ -39,14 +56,49 @@ const systemOptions = [
 export function PmlYearlyChart() {
   const [selectedSystem, setSelectedSystem] = React.useState("SIN");
   const [market, setMarket] = React.useState("mda");
+  const [selectedNodes, setSelectedNodes] = React.useState<string[]>([]);
+  const [nodeSearchQuery, setNodeSearchQuery] = React.useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState("");
+  const [isNodeDropdownOpen, setIsNodeDropdownOpen] = React.useState(false);
+
+  // Debounce search query to avoid excessive API calls
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(nodeSearchQuery);
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(timer);
+  }, [nodeSearchQuery]);
 
   // Build API URL
   const buildApiUrl = React.useCallback(() => {
-    return `${import.meta.env.VITE_API_URL}/api/v1/pml/yearly-comparison-by-system?market=${market}&sistema=${selectedSystem}`;
-  }, [market, selectedSystem]);
+    const baseUrl = `${import.meta.env.VITE_API_URL}/api/v1/pml/yearly-comparison-by-system?market=${market}&sistema=${selectedSystem}`;
+    
+    if (selectedNodes.length > 0) {
+      const nodeParams = selectedNodes.map(nodeClave => `claveNodo=${encodeURIComponent(nodeClave)}`).join('&');
+      return `${baseUrl}&${nodeParams}`;
+    }
+    
+    return baseUrl;
+  }, [market, selectedSystem, selectedNodes]);
+
+  // Node search query
+  const { data: nodeSearchResults, isLoading: isSearching } = useQuery<NodeSearchResponse, Error>({
+    queryKey: ["node-search", debouncedSearchQuery],
+    queryFn: async () => {
+      if (!debouncedSearchQuery.trim()) return { status: "success", data: [] };
+      
+      const url = `${import.meta.env.VITE_API_URL}/api/v1/pml/nodos/search?clave=${encodeURIComponent(debouncedSearchQuery)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to search nodes");
+      return res.json();
+    },
+    enabled: debouncedSearchQuery.trim().length > 0,
+    staleTime: 30000, // Cache for 30 seconds
+  });
 
   const { data, isLoading, error } = useQuery<PmlYearlyComparisonResponse, Error>({
-    queryKey: ["pml-yearly-comparison", market, selectedSystem],
+    queryKey: ["pml-yearly-comparison", market, selectedSystem, selectedNodes],
     queryFn: async () => {
       const url = buildApiUrl();
       const res = await fetch(url);
@@ -85,7 +137,29 @@ export function PmlYearlyChart() {
       previousYear: new Date().getFullYear() - 1
     };
 
-    // Handle flat structure response
+    // Handle nodes response structure (when nodes are selected)
+    if (data.data.nodes && Object.keys(data.data.nodes).length > 0) {
+      const nodesData = data.data.nodes;
+      
+      console.log('Processing nodes data:', { 
+        nodeCount: Object.keys(nodesData).length, 
+        nodes: Object.keys(nodesData)
+      });
+      
+      // Extract years from first node's data
+      const firstNodeKey = Object.keys(nodesData)[0];
+      const firstNodeData = nodesData[firstNodeKey];
+      
+      return {
+        chartData: nodesData,
+        currentYear: firstNodeData.currentYearData[0]?.Fecha ? 
+          parseInt(firstNodeData.currentYearData[0].Fecha.slice(0, 4)) : new Date().getFullYear(),
+        previousYear: firstNodeData.previousYearData[0]?.Fecha ? 
+          parseInt(firstNodeData.previousYearData[0].Fecha.slice(0, 4)) : new Date().getFullYear() - 1
+      };
+    }
+
+    // Handle flat structure response (system data)
     if (data.data.currentYearData && data.data.previousYearData) {
       const rawCurrentYearData = data.data.currentYearData;
       const rawPreviousYearData = data.data.previousYearData;
@@ -127,7 +201,7 @@ export function PmlYearlyChart() {
     const processedData: Record<string, { currentYear: Array<{x: string, y: number}>, previousYear: Array<{x: string, y: number}> }> = {};
     let allFilteredDates = new Set<string>();
 
-    Object.entries(chartData).forEach(([sistema, nodeData]) => {
+    Object.entries(chartData).forEach(([key, nodeData]) => {
       // Use full year data without time filtering
       const fullCurrentYear = nodeData.currentYearData;
       const fullPreviousYear = nodeData.previousYearData;
@@ -142,7 +216,10 @@ export function PmlYearlyChart() {
         allFilteredDates.add(monthDay);
       });
       
-      processedData[sistema] = {
+      // For node data, use the node key directly; for system data, use "Sistema"
+      const displayName = key === "Sistema" ? selectedSystem : key;
+      
+      processedData[displayName] = {
         currentYear: processYearData(fullCurrentYear),
         previousYear: processYearData(fullPreviousYear)
       };
@@ -161,12 +238,15 @@ export function PmlYearlyChart() {
     console.log('Categories count:', categories.length, 'Unique dates:', sortedDates.length);
 
     return { processedData, categories };
-  }, [chartData, processYearData]);
+  }, [chartData, processYearData, selectedSystem]);
 
-  // Generate chart series with colors
+  // Memoize categories separately for performance
+  const memoizedCategories = React.useMemo(() => categories, [categories]);
+
+  // Generate chart series with colors - heavily optimized for large datasets
   const series = React.useMemo(() => {
     // Early return if no processed data
-    if (!processedData || Object.keys(processedData).length === 0 || !categories.length) {
+    if (!processedData || Object.keys(processedData).length === 0 || !memoizedCategories.length) {
       return [];
     }
 
@@ -174,29 +254,41 @@ export function PmlYearlyChart() {
     const seriesData: any[] = [];
     let colorIndex = 0;
 
-    Object.entries(processedData).forEach(([sistema, nodeData]) => {
-      // Current year series
-      const currentYearColor = colors[colorIndex % colors.length];
-      const currentYearData = categories.map(category => {
-        const dataPoint = nodeData.currentYear.find(d => d.x === category);
-        return dataPoint ? dataPoint.y : null;
+    // Pre-create category lookup for O(1) performance
+    const categoryLookup = new Map(memoizedCategories.map((cat, index) => [cat, index]));
+
+    Object.entries(processedData).forEach(([entityName, nodeData]) => {
+      // Pre-allocate arrays for better performance
+      const currentYearData = new Array(memoizedCategories.length).fill(null);
+      const previousYearData = new Array(memoizedCategories.length).fill(null);
+      
+      // Current year series - optimized mapping
+      nodeData.currentYear.forEach(dataPoint => {
+        const index = categoryLookup.get(dataPoint.x);
+        if (index !== undefined) {
+          currentYearData[index] = dataPoint.y;
+        }
       });
       
+      // Previous year series - optimized mapping  
+      nodeData.previousYear.forEach(dataPoint => {
+        const index = categoryLookup.get(dataPoint.x);
+        if (index !== undefined) {
+          previousYearData[index] = dataPoint.y;
+        }
+      });
+      
+      const currentYearColor = colors[colorIndex % colors.length];
+      const previousYearColor = colors[(colorIndex + 5) % colors.length];
+      
       seriesData.push({
-        name: `${sistema} ${currentYear}`,
+        name: `${entityName} ${currentYear}`,
         data: currentYearData,
         color: currentYearColor
       });
       
-      // Previous year series (slightly darker/lighter variant)
-      const previousYearColor = colors[(colorIndex + 5) % colors.length];
-      const previousYearData = categories.map(category => {
-        const dataPoint = nodeData.previousYear.find(d => d.x === category);
-        return dataPoint ? dataPoint.y : null;
-      });
-      
       seriesData.push({
-        name: `${sistema} ${previousYear}`,
+        name: `${entityName} ${previousYear}`,
         data: previousYearData,
         color: previousYearColor
       });
@@ -205,55 +297,64 @@ export function PmlYearlyChart() {
     });
 
     return seriesData;
-  }, [processedData, categories, currentYear, previousYear]);
+  }, [processedData, memoizedCategories, currentYear, previousYear]);
 
-  // Use deferred value for performance optimization
-  const deferredSeries = useDeferredValue(series);
-  const deferredCategories = useDeferredValue(categories);
+  // Use deferred value for performance optimization - only defer when dataset is large
+  const shouldDefer = memoizedCategories.length > 50;
+  const deferredSeries = useDeferredValue(shouldDefer ? series : series);
+  const deferredCategories = useDeferredValue(shouldDefer ? memoizedCategories : memoizedCategories);
 
-  // Brush chart series - use full data but simplified for performance
+  // Brush chart series - use sampled data for large datasets
   const brushSeries = React.useMemo(() => {
     if (!deferredSeries.length) return [];
     
-    // Use full data for brush chart to ensure proper range representation
-    // Only take the first 2 series (most important ones) to reduce complexity
+    // For large datasets, sample every nth point for brush chart
+    const sampleRate = memoizedCategories.length > 200 ? Math.ceil(memoizedCategories.length / 100) : 1;
+    
+    // Use first 2 series for brush chart to reduce complexity
     const mainSeries = deferredSeries.slice(0, Math.min(2, deferredSeries.length));
     
-    console.log('Brush chart data range:', {
-      totalCategories: deferredCategories.length,
-      firstCategory: deferredCategories[0],
-      lastCategory: deferredCategories[deferredCategories.length - 1],
-      seriesCount: mainSeries.length,
-      dataPointsPerSeries: mainSeries[0]?.data.length
-    });
-    
-    return mainSeries.map(serie => ({
+    const sampledSeries = mainSeries.map(serie => ({
       name: serie.name,
-      data: serie.data, // Use full data for accurate brush representation
+      data: sampleRate > 1 
+        ? serie.data.filter((_: any, index: number) => index % sampleRate === 0)
+        : serie.data,
       color: serie.color
     }));
-  }, [deferredSeries, deferredCategories]);
+    
+    console.log('Brush chart optimization:', {
+      originalPoints: memoizedCategories.length,
+      sampleRate,
+      brushPoints: sampledSeries[0]?.data.length || 0,
+      seriesCount: sampledSeries.length
+    });
+    
+    return sampledSeries;
+  }, [deferredSeries, memoizedCategories.length]);
 
   const brushCategories = React.useMemo(() => {
-    // Use full categories for brush chart to ensure complete range
-    return deferredCategories;
-  }, [deferredCategories]);
+    // Sample categories to match brush series
+    const sampleRate = memoizedCategories.length > 200 ? Math.ceil(memoizedCategories.length / 100) : 1;
+    return sampleRate > 1 
+      ? deferredCategories.filter((_, index) => index % sampleRate === 0)
+      : deferredCategories;
+  }, [deferredCategories, memoizedCategories.length]);
 
   // CSV Download function
   const downloadCSV = React.useCallback(() => {
     if (!data?.data) return;
 
     const csvRows: string[] = [];
-    const headers = ['Date', 'Sistema', 'Year', 'PML_USD'];
+    const headers = ['Date', 'Entity', 'Year', 'PML_USD'];
     csvRows.push(headers.join(','));
 
     // Process data for CSV
-    Object.entries(processedData).forEach(([sistema, nodeData]) => {
+    Object.entries(processedData).forEach(([entityName, nodeData]) => {
       // Current year data
       nodeData.currentYear.forEach((dataPoint, index) => {
         if (dataPoint.y !== null) {
           const dateStr = categories[index] || dataPoint.x;
-          csvRows.push(`"${dateStr}","${sistema}",${currentYear},${dataPoint.y}`);
+          csvRows.push(`"${dateStr}","${entityName}",${currentYear},${dataPoint.y}`);
         }
       });
       
@@ -261,7 +362,7 @@ export function PmlYearlyChart() {
       nodeData.previousYear.forEach((dataPoint, index) => {
         if (dataPoint.y !== null) {
           const dateStr = categories[index] || dataPoint.x;
-          csvRows.push(`"${dateStr}","${sistema}",${previousYear},${dataPoint.y}`);
+          csvRows.push(`"${dateStr}","${entityName}",${previousYear},${dataPoint.y}`);
         }
       });
     });
@@ -274,7 +375,9 @@ export function PmlYearlyChart() {
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
       
-      const filename = `pml_yearly_comparison_${market}_${selectedSystem}_${new Date().toISOString().slice(0, 10)}.csv`;
+      const entityType = selectedNodes.length > 0 ? 'nodes' : 'system';
+      const entityIdentifier = selectedNodes.length > 0 ? selectedNodes.join('_') : selectedSystem;
+      const filename = `pml_yearly_comparison_${entityType}_${market}_${entityIdentifier}_${new Date().toISOString().slice(0, 10)}.csv`;
       link.setAttribute('download', filename);
       link.style.visibility = 'hidden';
       
@@ -282,7 +385,40 @@ export function PmlYearlyChart() {
       link.click();
       document.body.removeChild(link);
     }
-  }, [data, processedData, categories, currentYear, previousYear, market, selectedSystem]);
+  }, [data, processedData, categories, currentYear, previousYear, market, selectedSystem, selectedNodes]);
+
+  // Node selection handlers - optimized to prevent re-renders
+  const handleNodeSelect = React.useCallback((nodeClave: string) => {
+    if (selectedNodes.length >= 5) return; // Max 5 nodes
+    
+    setSelectedNodes(prev => {
+      if (prev.includes(nodeClave)) return prev; // No change
+      return [...prev, nodeClave];
+    });
+    
+    setNodeSearchQuery("");
+    setIsNodeDropdownOpen(false);
+  }, [selectedNodes.length]); // Only depend on length, not full array
+
+  const handleNodeRemove = React.useCallback((nodeToRemove: string) => {
+    setSelectedNodes(prev => prev.filter(nodeClave => nodeClave !== nodeToRemove));
+  }, []);
+
+  const handleNodeSearchChange = React.useCallback((value: string) => {
+    setNodeSearchQuery(value);
+    setIsNodeDropdownOpen(value.length > 0);
+  }, []);
+
+  // Clear nodes when system changes - optimized
+  const previousSystem = React.useRef(selectedSystem);
+  React.useEffect(() => {
+    if (previousSystem.current !== selectedSystem) {
+      setSelectedNodes([]);
+      setNodeSearchQuery("");
+      setIsNodeDropdownOpen(false);
+      previousSystem.current = selectedSystem;
+    }
+  }, [selectedSystem]);
 
   const chartOptions: ApexOptions = {
     chart: {
@@ -295,19 +431,18 @@ export function PmlYearlyChart() {
       },
       fontFamily: "Inter, sans-serif",
       animations: {
-        enabled: false  // Disable animations for better performance
+        enabled: deferredCategories.length < 100  // Disable animations for large datasets
       },
       zoom: {
-        enabled: true,  // Enable zoom on main chart
+        enabled: true,
         type: 'x',
         autoScaleYaxis: true
       },
       selection: {
         enabled: true,
         xaxis: {
-          // Start main chart with full range visible
           min: 0,
-          max: deferredCategories.length - 1
+          max: Math.max(0, deferredCategories.length - 1)
         }
       }
     },
@@ -315,13 +450,13 @@ export function PmlYearlyChart() {
     dataLabels: { enabled: false },
     stroke: {
       curve: "smooth",
-      width: 2,
+      width: deferredCategories.length > 200 ? 1 : 2,  // Thinner lines for large datasets
     },
     fill: {
       type: "gradient",
       gradient: {
         shadeIntensity: 1,
-        opacityFrom: 0.6,
+        opacityFrom: deferredCategories.length > 200 ? 0.4 : 0.6,  // Lower opacity for performance
         opacityTo: 0.1,
         stops: [0, 100],
       },
@@ -344,7 +479,8 @@ export function PmlYearlyChart() {
         show: true,
         showDuplicates: false,
       },
-      tickAmount: Math.min(deferredCategories.length, 24),
+      // Intelligent tick amount based on dataset size
+      tickAmount: Math.min(deferredCategories.length, deferredCategories.length > 200 ? 12 : 24),
       axisBorder: { show: false },
       axisTicks: { show: false },
     },
@@ -366,6 +502,8 @@ export function PmlYearlyChart() {
       },
       shared: true,
       intersect: false,
+      // Optimize tooltip for large datasets
+      followCursor: deferredCategories.length < 200,
       custom: function({series, dataPointIndex, w}) {
         const label = w.globals.labels[dataPointIndex];
         let tooltipContent = `
@@ -509,20 +647,99 @@ export function PmlYearlyChart() {
   return (
     <Card className="@container/card">
       <CardHeader>
-        <CardTitle>PML Promedio Diario ({market.toUpperCase()}): {currentYear} vs {previousYear}</CardTitle>
+        <CardTitle>
+          PML Promedio Diario ({market.toUpperCase()}): {currentYear} vs {previousYear}
+          {selectedNodes.length > 0 && ` - ${selectedNodes.length} Nodo${selectedNodes.length > 1 ? 's' : ''}`}
+        </CardTitle>
         <CardDescription>
           <span className="hidden @[540px]/card:block">
-            Comparación anual del Precio Marginal Local por sistema - {data?.data?.sistema || selectedSystem}
+            {selectedNodes.length > 0 
+              ? `Comparación anual del Precio Marginal Local por nodos seleccionados en ${selectedSystem}`
+              : `Comparación anual del Precio Marginal Local por sistema - ${data?.data?.sistema || selectedSystem}`
+            }
           </span>
-          <span className="@[440px]/card:hidden">PML Anual - {data?.data?.sistema || selectedSystem}</span>
+          <span className="@[440px]/card:hidden">
+            PML Anual - {selectedNodes.length > 0 ? `${selectedNodes.length} Nodos` : (data?.data?.sistema || selectedSystem)}
+          </span>
         </CardDescription>
         <CardAction>
-          <div className="flex gap-2 items-center">
+          <div className="flex gap-2 items-center flex-wrap">
             {/* Chart Actions Menu */}
             <ChartActionsMenu 
               onDownloadCSV={downloadCSV}
               disabled={!data?.data}
             />
+            
+            {/* Node Search Combobox */}
+            <div className="relative">
+              <div className="flex flex-col gap-1">
+                {/* Selected Nodes */}
+                {selectedNodes.length > 0 && (
+                  <div className="flex flex-wrap gap-1 max-w-xs">
+                    {selectedNodes.map((nodeClave) => (
+                      <div
+                        key={nodeClave}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-md"
+                      >
+                        <span className="truncate max-w-20" title={nodeClave}>
+                          {nodeClave}
+                        </span>
+                        <button
+                          onClick={() => handleNodeRemove(nodeClave)}
+                          className="hover:bg-blue-200 rounded-full p-0.5"
+                          type="button"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Search Input */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={nodeSearchQuery}
+                    onChange={(e) => handleNodeSearchChange(e.target.value)}
+                    placeholder={selectedNodes.length >= 5 ? "Máximo 5 nodos" : "Buscar nodo..."}
+                    disabled={selectedNodes.length >= 5}
+                    className="w-40 px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                    onFocus={() => nodeSearchQuery && setIsNodeDropdownOpen(true)}
+                    onBlur={() => setTimeout(() => setIsNodeDropdownOpen(false), 200)}
+                  />
+                  
+                  {/* Dropdown Results */}
+                  {isNodeDropdownOpen && nodeSearchResults?.data && nodeSearchResults.data.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-48 overflow-y-auto">
+                      {nodeSearchResults.data
+                        .filter(nodeClave => !selectedNodes.includes(nodeClave))
+                        .slice(0, 10)
+                        .map((nodeClave) => (
+                          <button
+                            key={nodeClave}
+                            onClick={() => handleNodeSelect(nodeClave)}
+                            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                            type="button"
+                          >
+                            <div className="font-medium">{nodeClave}</div>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                  
+                  {/* Loading indicator */}
+                  {isSearching && (
+                    <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            
             <Select
               defaultValue={market}
               onChange={setMarket}
@@ -578,17 +795,19 @@ export function PmlYearlyChart() {
         )}
         {data && Object.keys(chartData).length > 0 && (
           <div className="mt-4 space-y-2">
-            <div className="text-xs font-medium text-muted-foreground mb-2">Promedios del Sistema:</div>
+            <div className="text-xs font-medium text-muted-foreground mb-2">
+              {selectedNodes.length > 0 ? 'Promedios por Nodo:' : 'Promedios del Sistema:'}
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              {Object.entries(processedData).map(([sistema, nodeData], index) => {
+              {Object.entries(processedData).map(([entityName, nodeData], index) => {
                 const currentAvg = nodeData.currentYear.reduce((sum, item) => sum + (item.y || 0), 0) / (nodeData.currentYear.filter(item => item.y !== null).length || 1);
                 const previousAvg = nodeData.previousYear.reduce((sum, item) => sum + (item.y || 0), 0) / (nodeData.previousYear.filter(item => item.y !== null).length || 1);
                 const colors = ['#2db2ac', '#a74044', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444', '#06b6d4', '#f97316', '#84cc16', '#ec4899'];
                 const color = colors[index % colors.length];
                 
                 return (
-                  <div key={sistema} className="space-y-1">
-                    <div className="font-medium text-foreground">{sistema}</div>
+                  <div key={entityName} className="space-y-1">
+                    <div className="font-medium text-foreground">{entityName}</div>
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }}></div>
                       <span className="text-muted-foreground">
@@ -607,6 +826,11 @@ export function PmlYearlyChart() {
             </div>
             <div className="text-xs text-muted-foreground mt-2 pt-2 border-t">
               💡 Arrastra en el gráfico inferior para navegar por todo el año ({deferredCategories.length} puntos de datos disponibles)
+              {selectedNodes.length > 0 && (
+                <div className="mt-1">
+                  📊 Mostrando datos de {selectedNodes.length} nodo{selectedNodes.length > 1 ? 's' : ''} seleccionado{selectedNodes.length > 1 ? 's' : ''}
+                </div>
+              )}
             </div>
           </div>
         )}
