@@ -36,16 +36,8 @@ const systemOptions = [
   { value: "SIN", label: "SIN" },
 ];
 
-const timeRangeOptions = [
-  { value: "full", label: "Todo el año" },
-  { value: "3m", label: "Últimos 3 meses" },
-  { value: "6m", label: "Últimos 6 meses" },
-  { value: "9m", label: "Últimos 9 meses" },
-];
-
 export function PmlYearlyChart() {
   const [selectedSystem, setSelectedSystem] = React.useState("SIN");
-  const [timeRange, setTimeRange] = React.useState("full");
   const [market, setMarket] = React.useState("mda");
 
   // Build API URL
@@ -54,7 +46,7 @@ export function PmlYearlyChart() {
   }, [market, selectedSystem]);
 
   const { data, isLoading, error } = useQuery<PmlYearlyComparisonResponse, Error>({
-    queryKey: ["pml-yearly-comparison", market, selectedSystem, timeRange],
+    queryKey: ["pml-yearly-comparison", market, selectedSystem],
     queryFn: async () => {
       const url = buildApiUrl();
       const res = await fetch(url);
@@ -85,7 +77,7 @@ export function PmlYearlyChart() {
   }, []);
 
   const { chartData, currentYear, previousYear } = React.useMemo(() => {
-    console.log('Processing chartData...', { hasData: !!data?.data, timeRange });
+    console.log('Processing chartData...', { hasData: !!data?.data });
     
     if (!data?.data) return { 
       chartData: {},
@@ -120,11 +112,11 @@ export function PmlYearlyChart() {
       currentYear: new Date().getFullYear(),
       previousYear: new Date().getFullYear() - 1
     };
-  }, [data, timeRange]);
+  }, [data]);
 
-  // Filter data based on time range and process for chart
+  // Process data for chart (no time filtering - show full year)
   const { processedData, categories } = React.useMemo(() => {
-    console.log('Processing filtered data...', { chartDataKeys: Object.keys(chartData), timeRange });
+    console.log('Processing filtered data...', { chartDataKeys: Object.keys(chartData) });
     
     // Early return if no chart data
     if (!chartData || Object.keys(chartData).length === 0) {
@@ -132,51 +124,27 @@ export function PmlYearlyChart() {
       return { processedData: {}, categories: [] };
     }
 
-    const filterByTimeRange = (yearData: Array<{Fecha: string, AvgPML: number}>, isCurrentYear: boolean = true) => {
-      if (!yearData || yearData.length === 0) return [];
-      if (timeRange === "full") return yearData;
-      
-      const months = timeRange === "3m" ? 3 : timeRange === "6m" ? 6 : 9;
-      const currentDate = new Date();
-      
-      if (isCurrentYear) {
-        const cutoffDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - months + 1, 1);
-        return yearData.filter(item => {
-          const itemDate = new Date(item.Fecha);
-          return itemDate >= cutoffDate;
-        });
-      } else {
-        const prevYear = currentDate.getFullYear() - 1;
-        const cutoffDate = new Date(prevYear, currentDate.getMonth() - months + 1, 1);
-        const endDate = new Date(prevYear, currentDate.getMonth() + 1, 0);
-        
-        return yearData.filter(item => {
-          const itemDate = new Date(item.Fecha);
-          return itemDate >= cutoffDate && itemDate <= endDate;
-        });
-      }
-    };
-
     const processedData: Record<string, { currentYear: Array<{x: string, y: number}>, previousYear: Array<{x: string, y: number}> }> = {};
     let allFilteredDates = new Set<string>();
 
     Object.entries(chartData).forEach(([sistema, nodeData]) => {
-      const filteredCurrentYear = filterByTimeRange(nodeData.currentYearData, true);
-      const filteredPreviousYear = filterByTimeRange(nodeData.previousYearData, false);
+      // Use full year data without time filtering
+      const fullCurrentYear = nodeData.currentYearData;
+      const fullPreviousYear = nodeData.previousYearData;
       
       // Extract dates as month-day only (without year) to align both years
-      filteredCurrentYear.forEach(d => {
+      fullCurrentYear.forEach((d: any) => {
         const monthDay = d.Fecha.slice(5); // Get "MM-DD" part
         allFilteredDates.add(monthDay);
       });
-      filteredPreviousYear.forEach(d => {
+      fullPreviousYear.forEach((d: any) => {
         const monthDay = d.Fecha.slice(5); // Get "MM-DD" part  
         allFilteredDates.add(monthDay);
       });
       
       processedData[sistema] = {
-        currentYear: processYearData(filteredCurrentYear),
-        previousYear: processYearData(filteredPreviousYear)
+        currentYear: processYearData(fullCurrentYear),
+        previousYear: processYearData(fullPreviousYear)
       };
     });
 
@@ -193,7 +161,7 @@ export function PmlYearlyChart() {
     console.log('Categories count:', categories.length, 'Unique dates:', sortedDates.length);
 
     return { processedData, categories };
-  }, [chartData, timeRange, processYearData]);
+  }, [chartData, processYearData]);
 
   // Generate chart series with colors
   const series = React.useMemo(() => {
@@ -376,7 +344,7 @@ export function PmlYearlyChart() {
         show: true,
         showDuplicates: false,
       },
-      tickAmount: timeRange === "full" ? 24 : timeRange === "9m" ? 18 : timeRange === "6m" ? 12 : Math.min(deferredCategories.length, 15),
+      tickAmount: Math.min(deferredCategories.length, 24),
       axisBorder: { show: false },
       axisTicks: { show: false },
     },
@@ -573,14 +541,6 @@ export function PmlYearlyChart() {
               className="w-32"
               placeholder="Sistema"
               options={systemOptions}
-            />
-            
-            <Select
-              defaultValue={timeRange}
-              onChange={setTimeRange}
-              className="w-fit max-w-70"
-              placeholder="Período"
-              options={timeRangeOptions}
             />
           </div>
         </CardAction>
