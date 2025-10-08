@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useDeferredValue } from "react";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { useQuery } from "@tanstack/react-query";
@@ -160,12 +161,76 @@ export function PmlChart() {
     return { labels: filteredLabels, series: filteredSeries };
   }, [chartData, timeRange]);
 
+  const series = React.useMemo(() => {
+    if (!filteredData.series) return [];
+    
+    const seriesArray = [];
+    
+    // Add overall average series first
+    seriesArray.push({
+      name: "PML Promedio General",
+      data: filteredData.series.overall || [],
+    });
+    
+    // Add individual node series
+    nodeNames.forEach((node) => {
+      seriesArray.push({
+        name: `${node.nombre}`,
+        data: filteredData.series[node.clave] || [],
+      });
+    });
+    
+    return seriesArray;
+  }, [filteredData, nodeNames]);
+
+  // Use deferred value for performance optimization
+  const deferredSeries = useDeferredValue(series);
+  const deferredLabels = useDeferredValue(filteredData.labels || []);
+
+  // Brush chart series - use simplified data for performance
+  const brushSeries = React.useMemo(() => {
+    if (!deferredSeries.length) return [];
+    
+    // Use only the first 3 most important series (overall + top 2 nodes) for brush chart
+    const mainSeries = deferredSeries.slice(0, Math.min(3, deferredSeries.length));
+    
+    return mainSeries.map(serie => ({
+      name: serie.name,
+      data: serie.data,
+      color: ["#2db2ac", "#a74044", "#f59e0b"][deferredSeries.indexOf(serie)] || "#2db2ac"
+    }));
+  }, [deferredSeries]);
+
+  const brushLabels = React.useMemo(() => {
+    return deferredLabels;
+  }, [deferredLabels]);
+
   const chartOptions: ApexOptions = {
     chart: {
+      id: 'main-chart',
       type: "area",
       height: 250,
-      toolbar: { show: false },
+      toolbar: { 
+        show: false,
+        autoSelected: 'pan'
+      },
       fontFamily: "Inter, sans-serif",
+      animations: {
+        enabled: false  // Disable animations for better performance
+      },
+      zoom: {
+        enabled: true,
+        type: 'x',
+        autoScaleYaxis: true
+      },
+      selection: {
+        enabled: true,
+        xaxis: {
+          // Fit selection to actual data range, not from 0
+          min: 1,
+          max: deferredLabels.length
+        }
+      }
     },
     colors: ["#2db2ac", "#a74044", "#f59e0b", "#8b5cf6", "#10b981", "#ef4444", "#06b6d4", "#f97316"],
     dataLabels: { enabled: false },
@@ -188,15 +253,21 @@ export function PmlChart() {
       borderColor: "hsl(var(--border))",
     },
     xaxis: {
-      categories: filteredData.labels || [],
+      categories: deferredLabels,
       labels: {
         style: {
           colors: "hsl(var(--muted-foreground))",
           fontSize: "12px",
         },
       },
+      tickAmount: Math.min(deferredLabels.length, 15),
       axisBorder: { show: false },
       axisTicks: { show: false },
+      // Only set bounds if we have data, and fit to actual range
+      ...(deferredLabels.length > 0 && {
+        min: 1,
+        max: deferredLabels.length
+      })
     },
     yaxis: {
       min: 0,
@@ -270,27 +341,86 @@ export function PmlChart() {
     },
   };
 
-  const series = React.useMemo(() => {
-    if (!filteredData.series) return [];
-    
-    const seriesArray = [];
-    
-    // Add overall average series first
-    seriesArray.push({
-      name: "PML Promedio General",
-      data: filteredData.series.overall || [],
-    });
-    
-    // Add individual node series
-    nodeNames.forEach((node) => {
-      seriesArray.push({
-        name: `${node.nombre}`,
-        data: filteredData.series[node.clave] || [],
-      });
-    });
-    
-    return seriesArray;
-  }, [filteredData, nodeNames]);
+  // Brush chart options
+  const brushChartOptions: ApexOptions = {
+    chart: {
+      id: 'brush-chart',
+      height: 100,
+      type: 'area',
+      brush: {
+        target: 'main-chart',
+        enabled: true
+      },
+      selection: {
+        enabled: true,
+        xaxis: {
+          // Fit brush selection to actual data range
+          min: 1,
+          max: brushLabels.length
+        }
+      },
+      animations: {
+        enabled: false  // Disable animations for better performance
+      },
+      toolbar: {
+        show: false
+      }
+    },
+    colors: brushSeries.map(s => s.color),
+    stroke: {
+      width: 1,
+      curve: 'smooth'
+    },
+    fill: {
+      type: 'gradient',
+      gradient: {
+        opacityFrom: 0.4,
+        opacityTo: 0.1,
+      }
+    },
+    markers: {
+      size: 0  // Remove markers for performance
+    },
+    xaxis: {
+      categories: brushLabels,
+      tooltip: {
+        enabled: false
+      },
+      labels: {
+        show: false
+      },
+      axisBorder: {
+        show: false
+      },
+      axisTicks: {
+        show: false
+      },
+      // Only set bounds if we have data, and fit to actual range
+      ...(brushLabels.length > 0 && {
+        min: 1,
+        max: brushLabels.length
+      })
+    },
+    yaxis: {
+      max: brushSeries.length > 0 ? Math.max(...brushSeries.flatMap(s => s.data.filter((d: any) => d !== null && d !== undefined))) : 100,
+      tickAmount: 2,
+      labels: {
+        show: false
+      }
+    },
+    tooltip: {
+      enabled: false
+    },
+    legend: {
+      show: false
+    },
+    grid: {
+      show: false
+    },
+    dataLabels: {
+      enabled: false
+    }
+  };
 
   if (error) {
     return (
@@ -349,23 +479,47 @@ export function PmlChart() {
             <p className="text-sm text-muted-foreground animate-pulse">Cargando datos del gráfico...</p>
           </div>
         ) : (
-          <Chart
-            options={chartOptions}
-            series={series}
-            type="area"
-            height={250}
-          />
+          <div className="space-y-4">
+            {/* Main Chart */}
+            <Chart
+              options={chartOptions}
+              series={deferredSeries}
+              type="area"
+              height={250}
+            />
+            
+            {/* Brush Chart - Only show if we have enough data points to make it useful */}
+            {deferredLabels.length > 3 && (
+              <div className="border-t pt-3">
+                <Chart
+                  options={brushChartOptions}
+                  series={brushSeries}
+                  type="area" 
+                  height={100}
+                />
+              </div>
+            )}
+          </div>
         )}
         {data && (
-          <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
-            <span>
-              Promedio del mes: ${data.data.current_month_overall_average.toFixed(2)}
-            </span>
-            <span className={`${
-              data.data.trend === "positive" ? "text-green-600" : "text-red-600"
-            }`}>
-              {data.data.trend === "positive" ? "↗" : "↘"} {data.data.percentage_change.toFixed(2)}% vs mes anterior
-            </span>
+          <div className="mt-4 space-y-2">
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span>
+                Promedio del mes: ${data.data.current_month_overall_average.toFixed(2)}
+              </span>
+              <span className={`${
+                data.data.trend === "positive" ? "text-green-600" : "text-red-600"
+              }`}>
+                {data.data.trend === "positive" ? "↗" : "↘"} {data.data.percentage_change.toFixed(2)}% vs mes anterior
+              </span>
+            </div>
+            <div className="text-xs text-muted-foreground pt-2 border-t">
+              {deferredLabels.length > 3 ? (
+                <>💡 Arrastra en el gráfico inferior para navegar por los datos diarios ({deferredLabels.length} días disponibles)</>
+              ) : (
+                <>📊 Mostrando {deferredLabels.length} días de datos disponibles</>
+              )}
+            </div>
           </div>
         )}
       </CardContent>

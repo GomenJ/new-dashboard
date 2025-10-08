@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useDeferredValue } from "react";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { useQuery } from "@tanstack/react-query";
@@ -194,12 +195,63 @@ export function ServiciosYearlyChart() {
     document.body.removeChild(link);
   }, [currentYearData, previousYearData, currentYear, previousYear, selectedReserveType, market, selectedSystem]);
 
+  const series = [
+    {
+      name: `${currentYear}`,
+      data: currentYearData.map(item => item.y),
+    },
+    {
+      name: `${previousYear}`,
+      data: previousYearData.map(item => item.y),
+    },
+  ];
+
+  // Use deferred value for performance optimization
+  const deferredSeries = useDeferredValue(series);
+  const deferredCategories = useDeferredValue(currentYearData.map(item => item.x));
+
+  // Brush chart series - use simplified data for performance
+  const brushSeries = React.useMemo(() => {
+    if (!deferredSeries.length || !currentYearData.length) return [];
+    
+    // Use both series for brush chart with defensive data handling
+    return deferredSeries.map(serie => ({
+      name: serie.name,
+      data: Array.isArray(serie.data) ? serie.data.filter(d => d !== null && d !== undefined) : [],
+      color: serie.name.includes(`${currentYear}`) ? "#2db2ac" : "#a74044"
+    })).filter(serie => serie.data.length > 0); // Only include series with valid data
+  }, [deferredSeries, currentYear, currentYearData]);
+
+  const brushCategories = React.useMemo(() => {
+    return deferredCategories;
+  }, [deferredCategories]);
+
   const chartOptions: ApexOptions = {
     chart: {
+      id: 'main-chart',
       type: "area",
-      height: 350, // Increased height to accommodate rotated labels
-      toolbar: { show: false },
+      height: 300,
+      toolbar: { 
+        show: false,
+        autoSelected: 'pan'
+      },
       fontFamily: "Inter, sans-serif",
+      animations: {
+        enabled: false  // Disable animations for better performance
+      },
+      zoom: {
+        enabled: true,
+        type: 'x',
+        autoScaleYaxis: true
+      },
+      selection: {
+        enabled: true,
+        xaxis: {
+          // Start with full range visible - use safe bounds
+          min: 0,
+          max: Math.max(0, deferredCategories.length - 1)
+        }
+      }
     },
     colors: ["#2db2ac", "#a74044"],
     dataLabels: { enabled: false },
@@ -222,17 +274,16 @@ export function ServiciosYearlyChart() {
       borderColor: "hsl(var(--border))",
     },
     xaxis: {
-      categories: currentYearData.map(item => item.x),
+      categories: deferredCategories,
       labels: {
         style: {
           colors: "hsl(var(--muted-foreground))",
-          fontSize: "11px", // Slightly smaller font
+          fontSize: "11px",
         },
-        rotate: -45, // Rotate labels to prevent overlap
-        maxHeight: 60, // Limit label height
-        trim: true, // Trim long labels
+        rotate: -45,
+        maxHeight: 60,
+        trim: true,
         show: true,
-        // Show fewer labels for better UX when period is longer than 1 month
         showDuplicates: false,
       },
       tickAmount: timeRange === "full" ? 12 : timeRange === "9m" ? 9 : timeRange === "6m" ? 6 : undefined,
@@ -314,16 +365,83 @@ export function ServiciosYearlyChart() {
     },
   };
 
-  const series = [
-    {
-      name: `${currentYear}`,
-      data: currentYearData.map(item => item.y),
+  // Brush chart options
+  const brushChartOptions: ApexOptions = {
+    chart: {
+      id: 'brush-chart',
+      height: 130,
+      type: 'area',
+      brush: {
+        target: 'main-chart',
+        enabled: true
+      },
+      selection: {
+        enabled: true,
+        xaxis: {
+          // Use safe bounds for brush selection
+          min: 0,
+          max: Math.max(0, brushCategories.length - 1)
+        }
+      },
+      animations: {
+        enabled: false  // Disable animations for better performance
+      },
+      toolbar: {
+        show: false
+      }
     },
-    {
-      name: `${previousYear}`,
-      data: previousYearData.map(item => item.y),
+    colors: ["#2db2ac", "#a74044"], // Use fixed colors instead of mapping
+    stroke: {
+      width: 1,
+      curve: 'smooth'
     },
-  ];
+    fill: {
+      type: 'gradient',
+      gradient: {
+        opacityFrom: 0.4,
+        opacityTo: 0.1,
+      }
+    },
+    markers: {
+      size: 0  // Remove markers for performance
+    },
+    xaxis: {
+      categories: brushCategories,
+      tooltip: {
+        enabled: false
+      },
+      labels: {
+        show: false
+      },
+      axisBorder: {
+        show: false
+      },
+      axisTicks: {
+        show: false
+      }
+    },
+    yaxis: {
+      max: brushSeries.length > 0 && brushSeries[0]?.data?.length > 0 ? 
+        Math.max(...brushSeries.flatMap(s => s.data.filter((d: any) => d !== null && d !== undefined && typeof d === 'number'))) : 
+        100,
+      tickAmount: 2,
+      labels: {
+        show: false
+      }
+    },
+    tooltip: {
+      enabled: false
+    },
+    legend: {
+      show: false
+    },
+    grid: {
+      show: false
+    },
+    dataLabels: {
+      enabled: false
+    }
+  };
 
   if (error) {
     return (
@@ -396,26 +514,44 @@ export function ServiciosYearlyChart() {
             <p className="text-sm text-muted-foreground animate-pulse">Cargando comparación anual...</p>
           </div>
         ) : (
-          <Chart
-            options={chartOptions}
-            series={series}
-            type="area"
-            height={350}
-          />
+          <div className="space-y-4">
+            {/* Main Chart */}
+            <Chart
+              options={chartOptions}
+              series={deferredSeries}
+              type="area"
+              height={300}
+            />
+            
+            {/* Brush Chart */}
+            <div className="border-t pt-4">
+              <Chart
+                options={brushChartOptions}
+                series={brushSeries}
+                type="area" 
+                height={130}
+              />
+            </div>
+          </div>
         )}
         {data && (
-          <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-[#2db2ac]"></div>
-              <span className="text-muted-foreground">
-                Promedio {currentYear}: ${(currentYearData.reduce((sum, item) => sum + item.y, 0) / currentYearData.length || 0).toFixed(2)}
-              </span>
+          <div className="mt-4 space-y-2">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-[#2db2ac]"></div>
+                <span className="text-muted-foreground">
+                  Promedio {currentYear}: ${(currentYearData.reduce((sum, item) => sum + item.y, 0) / currentYearData.length || 0).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-[#a74044]"></div>
+                <span className="text-muted-foreground">
+                  Promedio {previousYear}: ${(previousYearData.reduce((sum, item) => sum + item.y, 0) / previousYearData.length || 0).toFixed(2)}
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-[#a74044]"></div>
-              <span className="text-muted-foreground">
-                Promedio {previousYear}: ${(previousYearData.reduce((sum, item) => sum + item.y, 0) / previousYearData.length || 0).toFixed(2)}
-              </span>
+            <div className="text-xs text-muted-foreground pt-2 border-t">
+              💡 Arrastra en el gráfico inferior para navegar por los datos anuales ({deferredCategories.length} puntos disponibles)
             </div>
           </div>
         )}
