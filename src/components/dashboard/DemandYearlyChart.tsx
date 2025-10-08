@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useDeferredValue } from "react";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { useQuery } from "@tanstack/react-query";
@@ -165,14 +166,76 @@ export function DemandYearlyChart() {
     document.body.removeChild(link);
   }, [currentYearData, previousYearData, currentYear, previousYear, selectedSistema]);
 
+  const series = [
+    {
+      name: `${currentYear}`,
+      data: currentYearData.map(item => item.y),
+      color: "#3b82f6"
+    },
+    {
+      name: `${previousYear}`,
+      data: previousYearData.map(item => item.y),
+      color: "#ef4444"
+    },
+  ];
+
+  // Use deferred value for performance optimization
+  const deferredSeries = useDeferredValue(series);
+  const categories = React.useMemo(() => currentYearData.map(item => item.x), [currentYearData]);
+  const deferredCategories = useDeferredValue(categories);
+
+  // Brush chart series - simplified for performance
+  const brushSeries = React.useMemo(() => {
+    if (!deferredSeries.length) return [];
+    
+    // Use both series for brush chart to show complete comparison
+    console.log('Brush chart data range:', {
+      totalCategories: deferredCategories.length,
+      firstCategory: deferredCategories[0],
+      lastCategory: deferredCategories[deferredCategories.length - 1],
+      seriesCount: deferredSeries.length,
+      dataPointsPerSeries: deferredSeries[0]?.data.length
+    });
+    
+    return deferredSeries.map(serie => ({
+      name: serie.name,
+      data: serie.data,
+      color: serie.color
+    }));
+  }, [deferredSeries, deferredCategories]);
+
+  const brushCategories = React.useMemo(() => {
+    return deferredCategories;
+  }, [deferredCategories]);
+
   const chartOptions: ApexOptions = {
     chart: {
+      id: 'main-chart',
       type: "area",
-      height: 350,
-      toolbar: { show: false },
+      height: 300,
+      toolbar: { 
+        show: false,
+        autoSelected: 'pan'
+      },
       fontFamily: "Inter, sans-serif",
+      animations: {
+        enabled: false  // Disable animations for better performance
+      },
+      zoom: {
+        enabled: true,  // Enable zoom on main chart
+        type: 'x',
+        autoScaleYaxis: true
+      },
+      selection: {
+        enabled: true,
+        xaxis: {
+          // Start main chart with full range visible
+          min: 0,
+          max: Math.max(0, deferredCategories.length - 1)
+        }
+      }
     },
-    colors: ["#3b82f6", "#ef4444"],
+    colors: deferredSeries.map(s => s.color),
     dataLabels: { enabled: false },
     stroke: {
       curve: "smooth",
@@ -193,7 +256,7 @@ export function DemandYearlyChart() {
       borderColor: "hsl(var(--border))",
     },
     xaxis: {
-      categories: currentYearData.map(item => item.x),
+      categories: deferredCategories,
       labels: {
         style: {
           colors: "hsl(var(--muted-foreground))",
@@ -205,7 +268,7 @@ export function DemandYearlyChart() {
         show: true,
         showDuplicates: false,
       },
-      tickAmount: timeRange === "full" ? 12 : timeRange === "9m" ? 9 : timeRange === "6m" ? 6 : undefined,
+      tickAmount: Math.min(deferredCategories.length, timeRange === "full" ? 24 : timeRange === "9m" ? 18 : timeRange === "6m" ? 12 : 6),
       axisBorder: { show: false },
       axisTicks: { show: false },
     },
@@ -229,26 +292,7 @@ export function DemandYearlyChart() {
       intersect: false,
       custom: function({series, dataPointIndex, w}) {
         const label = w.globals.labels[dataPointIndex];
-        const currentYearValue = series[0][dataPointIndex];
-        const previousYearValue = series[1][dataPointIndex];
-        const currentYear = w.config.series[0].name;
-        const previousYear = w.config.series[1].name;
-        
-        // Handle undefined/null values when series is hidden
-        if ((currentYearValue === undefined || currentYearValue === null) && 
-            (previousYearValue === undefined || previousYearValue === null)) {
-          return '';
-        }
-        
-        const currentDisplay = (currentYearValue !== undefined && currentYearValue !== null) 
-          ? currentYearValue.toLocaleString("en-US", { maximumFractionDigits: 0 }) + " MW"
-          : "N/A";
-        
-        const previousDisplay = (previousYearValue !== undefined && previousYearValue !== null) 
-          ? previousYearValue.toLocaleString("en-US", { maximumFractionDigits: 0 }) + " MW" 
-          : "N/A";
-        
-        return `
+        let tooltipContent = `
           <div style="
             background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
             color: white;
@@ -260,18 +304,34 @@ export function DemandYearlyChart() {
             min-width: 200px;
           ">
             <div style="font-weight: 600; margin-bottom: 6px; font-size: 12px;">${label}</div>
-            <div style="display: flex; align-items: center; margin-bottom: 3px;">
-              <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #3b82f6; margin-right: 6px;"></div>
-              <span style="font-size: 11px; color: rgba(255, 255, 255, 0.8);">${currentYear}:</span>
-              <span style="font-weight: 600; margin-left: 4px; font-size: 12px;">${currentDisplay}</span>
-            </div>
-            <div style="display: flex; align-items: center;">
-              <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #ef4444; margin-right: 6px;"></div>
-              <span style="font-size: 11px; color: rgba(255, 255, 255, 0.8);">${previousYear}:</span>
-              <span style="font-weight: 600; margin-left: 4px; font-size: 12px;">${previousDisplay}</span>
-            </div>
-          </div>
         `;
+        
+        let hasData = false;
+        
+        // Add each series data point
+        series.forEach((seriesData: number[], index: number) => {
+          if (seriesData[dataPointIndex] !== null && seriesData[dataPointIndex] !== undefined) {
+            hasData = true;
+            const seriesName = w.config.series[index].name;
+            const seriesColor = w.config.colors[index];
+            const value = seriesData[dataPointIndex];
+            
+            tooltipContent += `
+              <div style="display: flex; align-items: center; margin-bottom: 3px;">
+                <div style="width: 8px; height: 8px; border-radius: 50%; background-color: ${seriesColor}; margin-right: 6px;"></div>
+                <span style="font-size: 11px; color: rgba(255, 255, 255, 0.8);">${seriesName}:</span>
+                <span style="font-weight: 600; margin-left: 4px; font-size: 12px;">${value.toLocaleString("en-US", { maximumFractionDigits: 0 })} MW</span>
+              </div>
+            `;
+          }
+        });
+        
+        if (!hasData) {
+          return '';
+        }
+        
+        tooltipContent += '</div>';
+        return tooltipContent;
       },
     },
     legend: {
@@ -284,16 +344,81 @@ export function DemandYearlyChart() {
     },
   };
 
-  const series = [
-    {
-      name: `${currentYear}`,
-      data: currentYearData.map(item => item.y),
+  // Brush chart options
+  const brushChartOptions: ApexOptions = {
+    chart: {
+      id: 'brush-chart',
+      height: 130,
+      type: 'area',
+      brush: {
+        target: 'main-chart',
+        enabled: true
+      },
+      selection: {
+        enabled: true,
+        xaxis: {
+          // Start with full window open
+          min: 0,
+          max: Math.max(0, brushCategories.length - 1)
+        }
+      },
+      animations: {
+        enabled: false  // Disable animations for better performance
+      },
+      toolbar: {
+        show: false
+      }
     },
-    {
-      name: `${previousYear}`,
-      data: previousYearData.map(item => item.y),
+    colors: brushSeries.map(s => s.color),
+    stroke: {
+      width: 1,
+      curve: 'smooth'
     },
-  ];
+    fill: {
+      type: 'gradient',
+      gradient: {
+        opacityFrom: 0.4,
+        opacityTo: 0.1,
+      }
+    },
+    markers: {
+      size: 0  // Remove markers for performance
+    },
+    xaxis: {
+      categories: brushCategories,
+      tooltip: {
+        enabled: false
+      },
+      labels: {
+        show: false
+      },
+      axisBorder: {
+        show: false
+      },
+      axisTicks: {
+        show: false
+      }
+    },
+    yaxis: {
+      max: brushSeries.length > 0 ? Math.max(...brushSeries.flatMap(s => s.data.filter((d: any) => typeof d === 'number'))) : 100,
+      tickAmount: 2,
+      labels: {
+        show: false
+      }
+    },
+    tooltip: {
+      enabled: false
+    },
+    legend: {
+      show: false
+    },
+    grid: {
+      show: false
+    },
+    dataLabels: {
+      enabled: false
+    }
+  };
 
   if (error) {
     return (
@@ -345,26 +470,44 @@ export function DemandYearlyChart() {
             <p className="text-sm text-muted-foreground animate-pulse">Cargando comparación anual...</p>
           </div>
         ) : (
-          <Chart
-            options={chartOptions}
-            series={series}
-            type="area"
-            height={350}
-          />
+          <div className="space-y-4">
+            {/* Main Chart */}
+            <Chart
+              options={chartOptions}
+              series={deferredSeries}
+              type="area"
+              height={300}
+            />
+            
+            {/* Brush Chart */}
+            <div className="border-t pt-4">
+              <Chart
+                options={brushChartOptions}
+                series={brushSeries}
+                type="area" 
+                height={130}
+              />
+            </div>
+          </div>
         )}
         {data && (
-          <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-[#3b82f6]"></div>
-              <span className="text-muted-foreground">
-                Promedio {currentYear}: {(currentYearData.reduce((sum, item) => sum + item.y, 0) / currentYearData.length || 0).toFixed(0)} MW
-              </span>
+          <div className="mt-4 space-y-2">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-[#3b82f6]"></div>
+                <span className="text-muted-foreground">
+                  Promedio {currentYear}: {(currentYearData.reduce((sum, item) => sum + item.y, 0) / currentYearData.length || 0).toFixed(0)} MW
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-[#ef4444]"></div>
+                <span className="text-muted-foreground">
+                  Promedio {previousYear}: {(previousYearData.reduce((sum, item) => sum + item.y, 0) / previousYearData.length || 0).toFixed(0)} MW
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-[#ef4444]"></div>
-              <span className="text-muted-foreground">
-                Promedio {previousYear}: {(previousYearData.reduce((sum, item) => sum + item.y, 0) / previousYearData.length || 0).toFixed(0)} MW
-              </span>
+            <div className="text-xs text-muted-foreground mt-2 pt-2 border-t">
+              💡 Arrastra en el gráfico inferior para navegar por el período seleccionado ({deferredCategories.length} puntos de datos disponibles)
             </div>
           </div>
         )}
